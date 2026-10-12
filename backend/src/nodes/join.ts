@@ -46,7 +46,9 @@ async function buildSelectList(
 ): Promise<string> {
   const configured = cfg.selectFields ?? [];
   if (configured.length > 0) {
-    return configured
+    const included = configured.filter((f) => f.include !== false);
+    if (included.length === 0) throw new Error('Join 节点未选择任何输出字段');
+    return included
       .map((f) => {
         const side = f.side === 'right' ? 'r' : 'l';
         const alias = f.alias && f.alias.length > 0 ? f.alias : f.source;

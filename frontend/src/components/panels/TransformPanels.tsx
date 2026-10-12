@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { ArrowDown, ArrowUp, Plus, Trash2, Wand2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,6 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import {
   ColumnSelect,
@@ -57,110 +59,149 @@ function RowShell({ children, onRemove }: { children: React.ReactNode; onRemove:
 export function SelectPanel({ node }: PanelProps) {
   const [config, patch] = useNodeConfig<SelectConfig>(node);
   const inCols = useInputCols(node.id);
-  const fields = config.fields ?? [];
 
-  const setFields = (next: SelectField[]) =>
-    patch({ fields: next.map((field, index) => ({ ...field, order: index })) });
+  /** 上游字段的默认行：原样列出全部字段。 */
+  const defaultRows = useMemo<SelectField[]>(
+    () => inCols.map((col, index) => ({ source: col.name, alias: col.name, include: true, order: index })),
+    [inCols],
+  );
+
+  /** 展示行：以上游字段为准，叠加已保存的勾选/重命名/排序；上游新增字段自动追加在末尾。 */
+  const rows = useMemo<SelectField[]>(() => {
+    const configured = config.fields ?? [];
+    if (configured.length === 0) return defaultRows;
+    const saved = new Map(configured.map((f) => [f.source, f]));
+    const merged = defaultRows.map((row) => {
+      const hit = saved.get(row.source);
+      return hit ? { ...row, include: hit.include !== false, alias: hit.alias ?? row.alias } : row;
+    });
+    const order = new Map(configured.map((f, index) => [f.source, index]));
+    return merged.slice().sort((a, b) => {
+      const ia = order.get(a.source);
+      const ib = order.get(b.source);
+      if (ia === undefined && ib === undefined) return 0;
+      if (ia === undefined) return 1;
+      if (ib === undefined) return -1;
+      return ia - ib;
+    });
+  }, [defaultRows, config.fields]);
+
+  const commit = (next: SelectField[]) =>
+    patch({
+      fields: next.map((row, index) => ({
+        source: row.source,
+        alias: row.alias ?? '',
+        include: row.include !== false,
+        order: index,
+      })),
+    });
 
   const update = (index: number, p: Partial<SelectField>) =>
-    setFields(fields.map((field, i) => (i === index ? { ...field, ...p } : field)));
-
-  const remove = (index: number) => setFields(fields.filter((_, i) => i !== index));
+    commit(rows.map((row, i) => (i === index ? { ...row, ...p } : row)));
 
   const move = (index: number, dir: -1 | 1) => {
     const target = index + dir;
-    if (target < 0 || target >= fields.length) return;
-    const copy = [...fields];
+    if (target < 0 || target >= rows.length) return;
+    const copy = rows.slice();
     [copy[index], copy[target]] = [copy[target], copy[index]];
-    setFields(copy);
+    commit(copy);
   };
 
-  const autoFill = () =>
-    setFields(inCols.map((col, index) => ({ source: col.name, alias: '', include: true, order: index })));
+  const includedCount = rows.filter((row) => row.include !== false).length;
+  const allIncluded = rows.length > 0 && includedCount === rows.length;
 
   return (
     <div className="flex flex-col gap-4">
       <Section
         title="输出字段"
         action={
-          <div className="flex items-center gap-1">
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              disabled={inCols.length === 0}
-              onClick={autoFill}
-            >
-              <Wand2 />
-              按上游列生成
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => setFields([...fields, { source: '', alias: '', include: true, order: fields.length }])}
-            >
-              <Plus />
-              添加
-            </Button>
-          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={rows.length === 0}
+            onClick={() => patch({ fields: [] })}
+          >
+            <Wand2 />
+            按上游列重置
+          </Button>
         }
       >
-        {fields.length === 0 ? (
-          <EmptyHint>未配置字段时输出全部列（等价于 SELECT *）</EmptyHint>
+        {rows.length === 0 ? (
+          <EmptyHint>请先连接上游节点以获取字段</EmptyHint>
         ) : (
-          <div className="flex flex-col gap-2">
-            {fields.map((field, index) => (
-              <RowShell key={index} onRemove={() => remove(index)}>
-                <div className="flex items-center gap-1.5">
-                  <ColumnSelect
-                    value={field.source}
-                    onChange={(value) => update(index, { source: value })}
-                    columns={inCols}
-                    className="flex-1"
-                  />
-                  <Input
-                    value={field.alias ?? ''}
-                    onChange={(event) => update(index, { alias: event.target.value })}
-                    placeholder="别名（可选）"
-                    className="h-8 flex-1 text-xs"
-                  />
-                </div>
-                <div className="flex items-center justify-between">
-                  <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+          <>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-8">
                     <input
                       type="checkbox"
-                      checked={field.include}
-                      onChange={(event) => update(index, { include: event.target.checked })}
+                      ref={(el) => {
+                        if (el) el.indeterminate = includedCount > 0 && !allIncluded;
+                      }}
+                      checked={allIncluded}
+                      onChange={() => commit(rows.map((row) => ({ ...row, include: !allIncluded })))}
+                      title="全选 / 全不选"
                     />
-                    输出该列
-                  </label>
-                  <div className="flex items-center gap-0.5">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon-sm"
-                      disabled={index === 0}
-                      onClick={() => move(index, -1)}
-                      title="上移"
-                    >
-                      <ArrowUp className="size-3.5" />
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon-sm"
-                      disabled={index === fields.length - 1}
-                      onClick={() => move(index, 1)}
-                      title="下移"
-                    >
-                      <ArrowDown className="size-3.5" />
-                    </Button>
-                  </div>
-                </div>
-              </RowShell>
-            ))}
-          </div>
+                  </TableHead>
+                  <TableHead>字段名</TableHead>
+                  <TableHead className="w-28">重命名</TableHead>
+                  <TableHead className="w-12 text-right">顺序</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {rows.map((row, index) => (
+                  <TableRow key={row.source}>
+                    <TableCell>
+                      <input
+                        type="checkbox"
+                        checked={row.include !== false}
+                        onChange={(event) => update(index, { include: event.target.checked })}
+                        title="是否输出该字段"
+                      />
+                    </TableCell>
+                    <TableCell className="font-mono text-xs text-foreground">{row.source}</TableCell>
+                    <TableCell>
+                      <Input
+                        value={row.alias ?? ''}
+                        onChange={(event) => update(index, { alias: event.target.value })}
+                        placeholder={row.source}
+                        className="h-7 text-xs"
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center justify-end gap-0.5">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          disabled={index === 0}
+                          onClick={() => move(index, -1)}
+                          title="上移"
+                        >
+                          <ArrowUp className="size-3.5" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          disabled={index === rows.length - 1}
+                          onClick={() => move(index, 1)}
+                          title="下移"
+                        >
+                          <ArrowDown className="size-3.5" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+            <p className="text-[10px] leading-relaxed text-muted-foreground">
+              取消勾选则不输出该字段，列表从上到下即输出顺序（已选 {includedCount} / {rows.length}）。
+            </p>
+          </>
         )}
       </Section>
     </div>
@@ -228,9 +269,73 @@ export function JoinPanel({ node }: PanelProps) {
   const [config, patch] = useNodeConfig<JoinConfig>(node);
   const leftCols = useInputCols(node.id, 'left');
   const rightCols = useInputCols(node.id, 'right');
-  const selectFields = config.selectFields ?? [];
 
-  const setSelectFields = (next: JoinSelectField[]) => patch({ selectFields: next });
+  /** 上游字段的默认行：左表原样；右表与左侧重名时自动加 right_ 前缀去重。 */
+  const defaultRows = useMemo<JoinSelectField[]>(() => {
+    const used = new Set<string>();
+    const rows: JoinSelectField[] = [];
+    for (const col of leftCols) {
+      rows.push({ side: 'left', source: col.name, alias: col.name, include: true });
+      used.add(col.name);
+    }
+    for (const col of rightCols) {
+      let alias = col.name;
+      if (used.has(alias)) alias = `right_${alias}`;
+      let candidate = alias;
+      let i = 2;
+      while (used.has(candidate)) {
+        candidate = `${alias}_${i}`;
+        i += 1;
+      }
+      used.add(candidate);
+      rows.push({ side: 'right', source: col.name, alias: candidate, include: true });
+    }
+    return rows;
+  }, [leftCols, rightCols]);
+
+  /** 展示行：以上游字段为准，叠加已保存的勾选/重命名/排序；上游新增字段自动追加在末尾。 */
+  const rows = useMemo<JoinSelectField[]>(() => {
+    const configured = config.selectFields ?? [];
+    if (configured.length === 0) return defaultRows;
+    const saved = new Map(configured.map((f) => [`${f.side}:${f.source}`, f]));
+    const merged = defaultRows.map((row) => {
+      const hit = saved.get(`${row.side}:${row.source}`);
+      return hit ? { ...row, include: hit.include !== false, alias: hit.alias ?? row.alias } : row;
+    });
+    const order = new Map(configured.map((f, index) => [`${f.side}:${f.source}`, index]));
+    return merged.slice().sort((a, b) => {
+      const ia = order.get(`${a.side}:${a.source}`);
+      const ib = order.get(`${b.side}:${b.source}`);
+      if (ia === undefined && ib === undefined) return 0;
+      if (ia === undefined) return 1;
+      if (ib === undefined) return -1;
+      return ia - ib;
+    });
+  }, [defaultRows, config.selectFields]);
+
+  const commit = (next: JoinSelectField[]) =>
+    patch({
+      selectFields: next.map((row) => ({
+        side: row.side,
+        source: row.source,
+        alias: row.alias ?? '',
+        include: row.include !== false,
+      })),
+    });
+
+  const update = (index: number, p: Partial<JoinSelectField>) =>
+    commit(rows.map((row, i) => (i === index ? { ...row, ...p } : row)));
+
+  const move = (index: number, dir: -1 | 1) => {
+    const target = index + dir;
+    if (target < 0 || target >= rows.length) return;
+    const copy = rows.slice();
+    [copy[index], copy[target]] = [copy[target], copy[index]];
+    commit(copy);
+  };
+
+  const includedCount = rows.filter((row) => row.include !== false).length;
+  const allIncluded = rows.length > 0 && includedCount === rows.length;
 
   return (
     <div className="flex flex-col gap-4">
@@ -270,86 +375,99 @@ export function JoinPanel({ node }: PanelProps) {
       </div>
 
       <Section
-        title="输出字段（可选）"
+        title="输出字段"
         action={
-          <div className="flex items-center gap-1">
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => setSelectFields([...selectFields, { side: 'left', source: '', alias: '' }])}
-            >
-              <Plus />
-              左列
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => setSelectFields([...selectFields, { side: 'right', source: '', alias: '' }])}
-            >
-              <Plus />
-              右列
-            </Button>
-          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={rows.length === 0}
+            onClick={() => patch({ selectFields: undefined })}
+          >
+            <Wand2 />
+            按上游列重置
+          </Button>
         }
       >
-        {selectFields.length === 0 ? (
-          <EmptyHint>留空则输出全部列（右表重名列自动加 right_ 前缀）</EmptyHint>
+        {rows.length === 0 ? (
+          <EmptyHint>请先连接并运行左、右两个输入节点以获取字段</EmptyHint>
         ) : (
-          <div className="flex flex-col gap-2">
-            {selectFields.map((field, index) => (
-              <RowShell
-                key={index}
-                onRemove={() => setSelectFields(selectFields.filter((_, i) => i !== index))}
-              >
-                <div className="flex items-center gap-1.5">
-                  <Select
-                    value={field.side}
-                    onValueChange={(value) =>
-                      setSelectFields(
-                        selectFields.map((item, i) =>
-                          i === index
-                            ? { ...item, side: value as 'left' | 'right', source: '' }
-                            : item,
-                        ),
-                      )
-                    }
-                  >
-                    <SelectTrigger className="h-8 w-20 text-xs">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="left">左表</SelectItem>
-                      <SelectItem value="right">右表</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <ColumnSelect
-                    value={field.source}
-                    onChange={(value) =>
-                      setSelectFields(
-                        selectFields.map((item, i) => (i === index ? { ...item, source: value } : item)),
-                      )
-                    }
-                    columns={field.side === 'left' ? leftCols : rightCols}
-                    className="flex-1"
-                  />
-                  <Input
-                    value={field.alias ?? ''}
-                    onChange={(event) =>
-                      setSelectFields(
-                        selectFields.map((item, i) =>
-                          i === index ? { ...item, alias: event.target.value } : item,
-                        ),
-                      )
-                    }
-                    placeholder="别名"
-                    className="h-8 w-24 text-xs"
-                  />
-                </div>
-              </RowShell>
-            ))}
-          </div>
+          <>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-8">
+                    <input
+                      type="checkbox"
+                      ref={(el) => {
+                        if (el) el.indeterminate = includedCount > 0 && !allIncluded;
+                      }}
+                      checked={allIncluded}
+                      onChange={() => commit(rows.map((row) => ({ ...row, include: !allIncluded })))}
+                      title="全选 / 全不选"
+                    />
+                  </TableHead>
+                  <TableHead className="w-10">来源</TableHead>
+                  <TableHead>字段名</TableHead>
+                  <TableHead className="w-28">重命名</TableHead>
+                  <TableHead className="w-12 text-right">顺序</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {rows.map((row, index) => (
+                  <TableRow key={`${row.side}:${row.source}`}>
+                    <TableCell>
+                      <input
+                        type="checkbox"
+                        checked={row.include !== false}
+                        onChange={(event) => update(index, { include: event.target.checked })}
+                        title="是否输出该字段"
+                      />
+                    </TableCell>
+                    <TableCell className="text-[11px] text-muted-foreground">
+                      {row.side === 'left' ? '左' : '右'}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs text-foreground">{row.source}</TableCell>
+                    <TableCell>
+                      <Input
+                        value={row.alias ?? ''}
+                        onChange={(event) => update(index, { alias: event.target.value })}
+                        placeholder={row.source}
+                        className="h-7 text-xs"
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center justify-end gap-0.5">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          disabled={index === 0}
+                          onClick={() => move(index, -1)}
+                          title="上移"
+                        >
+                          <ArrowUp className="size-3.5" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          disabled={index === rows.length - 1}
+                          onClick={() => move(index, 1)}
+                          title="下移"
+                        >
+                          <ArrowDown className="size-3.5" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+            <p className="text-[10px] leading-relaxed text-muted-foreground">
+              取消勾选则不输出该字段，列表从上到下即输出顺序（已选 {includedCount} / {rows.length}）。
+            </p>
+          </>
         )}
       </Section>
     </div>

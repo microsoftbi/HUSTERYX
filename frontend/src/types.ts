@@ -105,6 +105,8 @@ export interface JoinSelectField {
   side: 'left' | 'right';
   source: string;
   alias?: string;
+  /** 是否输出该字段；undefined 视为输出（兼容旧配置）。数组顺序即输出顺序。 */
+  include?: boolean;
 }
 
 export interface JoinConfig {

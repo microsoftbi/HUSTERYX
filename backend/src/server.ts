@@ -4,6 +4,7 @@ import multipart from '@fastify/multipart';
 import { connectionsRoutes } from './routes/connections.js';
 import { filesRoutes } from './routes/files.js';
 import { runsRoutes } from './routes/runs.js';
+import { schemaRoutes } from './routes/schema.js';
 import { workflowsRoutes } from './routes/workflows.js';
 
 export async function buildServer(): Promise<FastifyInstance> {
@@ -30,6 +31,7 @@ export async function buildServer(): Promise<FastifyInstance> {
   await app.register(runsRoutes);
   await app.register(filesRoutes);
   await app.register(connectionsRoutes);
+  await app.register(schemaRoutes);
 
   return app;
 }

@@ -8,6 +8,7 @@ import type {
   NodeRunStatus,
   PreviewResult,
   RunLogEvent,
+  SqlServerConnection,
   Workflow,
   WorkflowEdge,
   WorkflowNode,
@@ -53,6 +54,10 @@ interface WorkflowState {
   /* 各节点输出列（运行成功后回填，用于配置面板列下拉） */
   nodeColumns: Record<string, ColumnMeta[]>;
 
+  /* 各输入节点探测得到的数据结构（配置完成后自动探测） */
+  inputSchemas: Record<string, ColumnMeta[]>;
+  inputSchemaSignatures: Record<string, string>;
+
   /* 画布操作 */
   addNode: (kind: NodeKind, position: { x: number; y: number }) => void;
   updateNodeName: (nodeId: string, name: string) => void;
@@ -62,6 +67,8 @@ interface WorkflowState {
   addEdge: (edge: { source: string; target: string; sourceHandle?: string | null; targetHandle?: string | null }) => void;
   removeEdge: (edgeId: string) => void;
   selectNode: (nodeId: string | null) => void;
+  probeInputNode: (nodeId: string) => Promise<void>;
+  probeAllInputs: () => Promise<void>;
 
   /* 工作流操作 */
   newWorkflow: () => void;
@@ -124,6 +131,57 @@ function reachable(edges: WorkflowEdge[], from: string, to: string): boolean {
   return false;
 }
 
+interface ProbePlan {
+  signature: string;
+  fetch: () => Promise<{ columns: ColumnMeta[] }>;
+}
+
+/** 依据输入节点配置构造结构探测请求；配置不完整时返回 null。 */
+function buildProbePlan(node: WorkflowNode): ProbePlan | null {
+  const cfg = node.config;
+  switch (node.kind) {
+    case 'inputCsv': {
+      const path = String(cfg.path ?? '');
+      if (!path) return null;
+      const delimiter = cfg.delimiter as string | undefined;
+      const hasHeader = cfg.hasHeader !== false;
+      const encoding = cfg.encoding as string | undefined;
+      return {
+        signature: JSON.stringify(['csv', path, delimiter ?? ',', hasHeader, encoding ?? 'utf-8']),
+        fetch: () => api.csvSchema({ path, delimiter, hasHeader, encoding }),
+      };
+    }
+    case 'inputExcel': {
+      const path = String(cfg.path ?? '');
+      if (!path) return null;
+      const sheet = cfg.sheet as string | undefined;
+      const hasHeader = cfg.hasHeader !== false;
+      return {
+        signature: JSON.stringify(['excel', path, sheet ?? '', hasHeader]),
+        fetch: () => api.excelSchema({ path, sheet, hasHeader }),
+      };
+    }
+    case 'inputSqlServer': {
+      const connection = cfg.connection as SqlServerConnection | undefined;
+      const query = String(cfg.query ?? '');
+      if (!connection?.server || !connection.database || !connection.user || !query) return null;
+      return {
+        signature: JSON.stringify([
+          'sqlserver',
+          connection.server,
+          connection.port ?? 1433,
+          connection.database,
+          connection.user,
+          query,
+        ]),
+        fetch: () => api.sqlServerColumns({ connection, query }),
+      };
+    }
+    default:
+      return null;
+  }
+}
+
 export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
   workflowId: null,
   workflowName: '未命名工作流',
@@ -141,6 +199,8 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
   logs: [],
   previews: {},
   nodeColumns: {},
+  inputSchemas: {},
+  inputSchemaSignatures: {},
 
   addNode: (kind, position) => {
     const meta = getNodeMeta(kind);
@@ -225,6 +285,31 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
 
   selectNode: (nodeId) => set({ selectedNodeId: nodeId }),
 
+  probeInputNode: async (nodeId) => {
+    const node = get().nodes.find((item) => item.id === nodeId);
+    if (!node) return;
+    const plan = buildProbePlan(node);
+    if (!plan) return;
+    if (get().inputSchemaSignatures[nodeId] === plan.signature) return;
+
+    const signature = plan.signature;
+    let columns: ColumnMeta[] = [];
+    try {
+      const result = await plan.fetch();
+      columns = result.columns;
+    } catch {
+      columns = [];
+    }
+    set((state) => ({
+      inputSchemas: { ...state.inputSchemas, [nodeId]: columns },
+      inputSchemaSignatures: { ...state.inputSchemaSignatures, [nodeId]: signature },
+    }));
+  },
+
+  probeAllInputs: async () => {
+    await Promise.all(get().nodes.map((node) => get().probeInputNode(node.id)));
+  },
+
   newWorkflow: () => {
     unsubscribe?.();
     unsubscribe = null;
@@ -242,6 +327,8 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
       logs: [],
       previews: {},
       nodeColumns: {},
+      inputSchemas: {},
+      inputSchemaSignatures: {},
     });
   },
 
@@ -269,6 +356,8 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
       logs: [],
       previews: {},
       nodeColumns: {},
+      inputSchemas: {},
+      inputSchemaSignatures: {},
     });
   },
 

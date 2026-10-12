@@ -47,7 +47,7 @@ const DEFAULT_SQL_CONNECTION = {
 export const NODE_META: Record<NodeKind, NodeMeta> = {
   inputCsv: {
     kind: 'inputCsv',
-    label: 'CSV 输入',
+    label: 'CSV',
     category: 'input',
     description: '从本地 CSV 文件读取数据',
     icon: FileSpreadsheet,
@@ -57,7 +57,7 @@ export const NODE_META: Record<NodeKind, NodeMeta> = {
   },
   inputExcel: {
     kind: 'inputExcel',
-    label: 'Excel 输入',
+    label: 'Excel',
     category: 'input',
     description: '从 Excel 工作表读取数据',
     icon: Table2,
@@ -67,7 +67,7 @@ export const NODE_META: Record<NodeKind, NodeMeta> = {
   },
   inputSqlServer: {
     kind: 'inputSqlServer',
-    label: 'SQL Server 输入',
+    label: 'SQL Server',
     category: 'input',
     description: '执行 SQL 查询读取 SQL Server 数据',
     icon: Database,
@@ -77,7 +77,7 @@ export const NODE_META: Record<NodeKind, NodeMeta> = {
   },
   select: {
     kind: 'select',
-    label: 'Select 选择',
+    label: 'Select',
     category: 'transform',
     description: '选择、重命名并重排列',
     icon: Columns3,
@@ -87,7 +87,7 @@ export const NODE_META: Record<NodeKind, NodeMeta> = {
   },
   filter: {
     kind: 'filter',
-    label: 'Filter 过滤',
+    label: 'Filter',
     category: 'transform',
     description: '按 SQL 布尔表达式过滤行',
     icon: Filter,
@@ -97,7 +97,7 @@ export const NODE_META: Record<NodeKind, NodeMeta> = {
   },
   join: {
     kind: 'join',
-    label: 'Join 连接',
+    label: 'Join',
     category: 'transform',
     description: '按连接键合并两路数据',
     icon: GitMerge,
@@ -110,7 +110,7 @@ export const NODE_META: Record<NodeKind, NodeMeta> = {
   },
   aggregation: {
     kind: 'aggregation',
-    label: 'Aggregation 汇总',
+    label: 'Aggregation',
     category: 'transform',
     description: '分组并聚合（Sum/Count/Max/Min/Avg）',
     icon: Calculator,
@@ -120,7 +120,7 @@ export const NODE_META: Record<NodeKind, NodeMeta> = {
   },
   sort: {
     kind: 'sort',
-    label: 'Sort 排序',
+    label: 'Sort',
     category: 'transform',
     description: '按多列排序',
     icon: ArrowDownUp,
@@ -130,7 +130,7 @@ export const NODE_META: Record<NodeKind, NodeMeta> = {
   },
   outputCsv: {
     kind: 'outputCsv',
-    label: 'CSV 输出',
+    label: 'CSV',
     category: 'output',
     description: '写出 CSV 文件',
     icon: FileDown,
@@ -140,7 +140,7 @@ export const NODE_META: Record<NodeKind, NodeMeta> = {
   },
   outputExcel: {
     kind: 'outputExcel',
-    label: 'Excel 输出',
+    label: 'Excel',
     category: 'output',
     description: '写出 Excel 工作表',
     icon: Sheet,
@@ -150,7 +150,7 @@ export const NODE_META: Record<NodeKind, NodeMeta> = {
   },
   outputSqlServer: {
     kind: 'outputSqlServer',
-    label: 'SQL Server 输出',
+    label: 'SQL Server',
     category: 'output',
     description: '写入 SQL Server 表',
     icon: FileType2,

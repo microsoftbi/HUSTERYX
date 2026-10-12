@@ -8,7 +8,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useWorkflowStore } from '@/store/workflowStore';
-import { inputColumns } from '@/lib/graph';
+import { upstreamNodeId } from '@/lib/graph';
+import { deriveNodeColumns } from '@/lib/schema';
 import { cn } from '@/lib/utils';
 import type { ColumnMeta, WorkflowNode } from '@/types';
 
@@ -34,14 +35,22 @@ export function useNodeConfig<T extends object>(
   return [node.config as unknown as T, patch];
 }
 
-/** 读取某输入端口的上游列（来自上一次运行成功后回填的 schema）。 */
+/** 读取某输入端口的上游列：输入节点来自探测结果，转换节点按配置推导。 */
 export function useInputCols(nodeId: string, handle = 'in'): ColumnMeta[] {
-  const nodeColumns = useWorkflowStore((s) => s.nodeColumns);
+  const nodes = useWorkflowStore((s) => s.nodes);
   const edges = useWorkflowStore((s) => s.edges);
-  return useMemo(
-    () => inputColumns(nodeColumns, edges, nodeId, handle),
-    [nodeColumns, edges, nodeId, handle],
+  const nodeColumns = useWorkflowStore((s) => s.nodeColumns);
+  const inputSchemas = useWorkflowStore((s) => s.inputSchemas);
+
+  const derived = useMemo(
+    () => deriveNodeColumns(nodes, edges, { ...nodeColumns, ...inputSchemas }),
+    [nodes, edges, nodeColumns, inputSchemas],
   );
+
+  return useMemo(() => {
+    const upstream = upstreamNodeId(edges, nodeId, handle);
+    return upstream ? derived[upstream] ?? [] : [];
+  }, [derived, edges, nodeId, handle]);
 }
 
 export function Field({

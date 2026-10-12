@@ -4,8 +4,11 @@ import { FlowCanvas } from '@/components/canvas/FlowCanvas';
 import { NodeConfigPanel } from '@/components/panels/NodeConfigPanel';
 import { BottomPanel } from '@/components/preview/BottomPanel';
 import { RunErrorDialog } from '@/components/preview/RunErrorDialog';
+import { useInputSchemaSync } from '@/lib/useInputSchemaSync';
 
 export function Workbench() {
+  useInputSchemaSync();
+
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-background text-foreground">
       <Toolbar />

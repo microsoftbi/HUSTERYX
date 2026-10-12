@@ -73,6 +73,18 @@ export const api = {
   listSheets: (path: string) =>
     request<{ sheets: string[] }>(`/api/files/sheets?path=${encodeURIComponent(path)}`),
 
+  /* ----------------------------- 结构探测 ----------------------------- */
+  csvSchema: (body: { path: string; delimiter?: string; hasHeader?: boolean; encoding?: string }) =>
+    request<{ columns: { name: string; type: string }[] }>('/api/schema/csv', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  excelSchema: (body: { path: string; sheet?: string; hasHeader?: boolean }) =>
+    request<{ columns: { name: string; type: string }[] }>('/api/schema/excel', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
   /* ----------------------------- 连接 ----------------------------- */
   testSqlServer: (connection: SqlServerConnection) =>
     request<SqlServerTestResult>('/api/connections/sqlserver/test', {
