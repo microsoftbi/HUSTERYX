@@ -15,6 +15,7 @@ import {
 } from '@xyflow/react';
 import { MousePointerClick } from 'lucide-react';
 import { nodeTypes, type HusterNodeData } from '@/components/canvas/NodeCard';
+import { formatInt } from '@/lib/format';
 import { getNodeMeta, type NodeCategory } from '@/lib/nodeMeta';
 import { useWorkflowStore } from '@/store/workflowStore';
 import type { NodeKind } from '@/types';
@@ -80,15 +81,31 @@ export function FlowCanvas() {
 
   const rfEdges = useMemo<Edge[]>(
     () =>
-      edges.map((edge) => ({
-        id: edge.id,
-        source: edge.source,
-        target: edge.target,
-        sourceHandle: edge.sourceHandle ?? 'out',
-        targetHandle: edge.targetHandle ?? 'in',
-        animated: nodeStatus[edge.source] === 'running',
-      })),
-    [edges, nodeStatus],
+      edges.map((edge) => {
+        const status = nodeStatus[edge.source];
+        const result = nodeResults[edge.source];
+        // 连线上流过的行数即起点节点的输出行数；起点执行成功后才标注。
+        const rowLabel = status === 'success' && result ? `${formatInt(result.rowCount)} 行` : null;
+        return {
+          id: edge.id,
+          source: edge.source,
+          target: edge.target,
+          sourceHandle: edge.sourceHandle ?? 'out',
+          targetHandle: edge.targetHandle ?? 'in',
+          animated: status === 'running',
+          ...(rowLabel
+            ? {
+                label: rowLabel,
+                labelShowBg: true,
+                labelBgPadding: [6, 2] as [number, number],
+                labelBgBorderRadius: 4,
+                labelBgStyle: { fill: 'var(--card)', stroke: 'var(--border)', strokeWidth: 1 },
+                labelStyle: { fill: 'var(--foreground)', fontSize: 10, fontWeight: 600 },
+              }
+            : {}),
+        };
+      }),
+    [edges, nodeStatus, nodeResults],
   );
 
   const onNodesChange = useCallback(
