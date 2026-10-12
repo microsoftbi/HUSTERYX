@@ -1,0 +1,25 @@
+[package]
+name = "husteryx"
+version = "0.1.0"
+description = "单机桌面低代码 ETL 工具（简易版 Alteryx）"
+authors = ["HUSTERYX"]
+edition = "2021"
+rust-version = "1.77.2"
+
+# Tauri 作为桌面外壳：开发期加载 Vite dev server，打包时加载前端构建产物。
+# 计算引擎（Fastify + DuckDB）以独立进程运行，后续如需可改为 sidecar。
+[lib]
+name = "husteryx_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[features]
+# 由 `tauri build` 自动启用，用于加载内置前端资源。
+custom-protocol = ["tauri/custom-protocol"]

@@ -1,0 +1,9 @@
+order_id,customer,region,amount,status
+1001,Alice,North,120.5,PAID
+1002,Bob,South,80,PAID
+1003,Cathy,North,45.25,PENDING
+1004,Dan,East,200,PAID
+1005,Erin,South,60,CANCELLED
+1006,Frank,North,310.75,PAID
+1007,Grace,East,95,PENDING
+1008,Heidi,South,150.5,PAID

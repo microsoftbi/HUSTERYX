@@ -1,0 +1,105 @@
+{
+  "name": "示例·订单关联客户分层汇总",
+  "nodes": [
+    {
+      "id": "n1",
+      "kind": "inputCsv",
+      "name": "读取订单事实表",
+      "position": { "x": 0, "y": 0 },
+      "config": {
+        "path": "/Users/wadesong/Desktop/TEST/HUSTERYX/samples/fact_sales.csv",
+        "delimiter": ",",
+        "hasHeader": true,
+        "encoding": "utf-8"
+      }
+    },
+    {
+      "id": "n2",
+      "kind": "filter",
+      "name": "剔除已取消订单",
+      "position": { "x": 260, "y": 0 },
+      "config": {
+        "expression": "status <> '已取消'"
+      }
+    },
+    {
+      "id": "n3",
+      "kind": "inputExcel",
+      "name": "读取客户维度表",
+      "position": { "x": 0, "y": 220 },
+      "config": {
+        "path": "/Users/wadesong/Desktop/TEST/HUSTERYX/samples/dim_customer.xlsx",
+        "sheet": "dim_customer",
+        "hasHeader": true
+      }
+    },
+    {
+      "id": "n4",
+      "kind": "join",
+      "name": "订单关联客户",
+      "position": { "x": 520, "y": 110 },
+      "config": {
+        "joinType": "left",
+        "leftKey": "customer_id",
+        "rightKey": "customer_id",
+        "selectFields": [
+          { "side": "left", "source": "order_id" },
+          { "side": "left", "source": "order_date" },
+          { "side": "left", "source": "customer_id" },
+          { "side": "left", "source": "product_code" },
+          { "side": "left", "source": "channel" },
+          { "side": "left", "source": "quantity" },
+          { "side": "left", "source": "amount" },
+          { "side": "right", "source": "customer_name" },
+          { "side": "right", "source": "segment" },
+          { "side": "right", "source": "province" },
+          { "side": "right", "source": "city" }
+        ]
+      }
+    },
+    {
+      "id": "n5",
+      "kind": "aggregation",
+      "name": "按分层与省份汇总",
+      "position": { "x": 780, "y": 110 },
+      "config": {
+        "groupBy": ["segment", "province"],
+        "aggregations": [
+          { "field": "amount", "fn": "sum", "alias": "total_amount" },
+          { "field": "order_id", "fn": "count", "alias": "order_count" },
+          { "field": "amount", "fn": "avg", "alias": "avg_amount" },
+          { "field": "amount", "fn": "max", "alias": "max_amount" },
+          { "field": "amount", "fn": "min", "alias": "min_amount" }
+        ]
+      }
+    },
+    {
+      "id": "n6",
+      "kind": "sort",
+      "name": "按销售额降序",
+      "position": { "x": 1040, "y": 110 },
+      "config": {
+        "sorts": [{ "field": "total_amount", "direction": "desc", "nulls": "last" }]
+      }
+    },
+    {
+      "id": "n7",
+      "kind": "outputCsv",
+      "name": "输出分层汇总",
+      "position": { "x": 1300, "y": 110 },
+      "config": {
+        "path": "sales_by_segment_province.csv",
+        "delimiter": ",",
+        "hasHeader": true
+      }
+    }
+  ],
+  "edges": [
+    { "id": "e1", "source": "n1", "target": "n2", "sourceHandle": "out", "targetHandle": "in" },
+    { "id": "e2", "source": "n2", "target": "n4", "sourceHandle": "out", "targetHandle": "left" },
+    { "id": "e3", "source": "n3", "target": "n4", "sourceHandle": "out", "targetHandle": "right" },
+    { "id": "e4", "source": "n4", "target": "n5", "sourceHandle": "out", "targetHandle": "in" },
+    { "id": "e5", "source": "n5", "target": "n6", "sourceHandle": "out", "targetHandle": "in" },
+    { "id": "e6", "source": "n6", "target": "n7", "sourceHandle": "out", "targetHandle": "in" }
+  ]
+}

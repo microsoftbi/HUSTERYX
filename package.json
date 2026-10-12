@@ -1,0 +1,20 @@
+{
+  "name": "husteryx",
+  "private": true,
+  "version": "0.1.0",
+  "description": "单机桌面低代码 ETL 工具（简易版 Alteryx）",
+  "scripts": {
+    "dev": "concurrently -k -n backend,frontend -c blue,green \"pnpm --filter @husteryx/backend dev\" \"pnpm --filter @husteryx/frontend dev\"",
+    "dev:backend": "pnpm --filter @husteryx/backend dev",
+    "dev:frontend": "pnpm --filter @husteryx/frontend dev",
+    "build": "pnpm --filter @husteryx/backend build && pnpm --filter @husteryx/frontend build",
+    "tauri": "tauri",
+    "desktop": "tauri dev",
+    "desktop:build": "tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.9.3",
+    "concurrently": "^9.2.5",
+    "typescript": "^5.9.3"
+  }
+}
