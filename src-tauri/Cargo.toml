@@ -19,6 +19,7 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+libc = "0.2"
 
 [features]
 # 由 `tauri build` 自动启用，用于加载内置前端资源。
