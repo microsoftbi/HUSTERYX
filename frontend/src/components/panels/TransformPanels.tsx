@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { ArrowDown, ArrowUp, Plus, Trash2, Wand2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,7 +16,6 @@ import {
   ColumnSelect,
   EmptyHint,
   Field,
-  MultiColumnSelect,
   Section,
   useInputCols,
   useNodeConfig,
@@ -482,20 +481,99 @@ export function AggregationPanel({ node }: PanelProps) {
   const [config, patch] = useNodeConfig<AggregationConfig>(node);
   const inCols = useInputCols(node.id);
   const aggregations = config.aggregations ?? [];
+  const groupBy = config.groupBy ?? [];
+  const [pending, setPending] = useState('');
+
+  const available = inCols.filter((col) => !groupBy.includes(col.name));
 
   const setAggregations = (next: typeof aggregations) => patch({ aggregations: next });
 
   const update = (index: number, p: Partial<(typeof aggregations)[number]>) =>
     setAggregations(aggregations.map((item, i) => (i === index ? { ...item, ...p } : item)));
 
+  /** 添加选中的字段到分组键列表末尾（忽略空值与重复项）。 */
+  const addGroup = () => {
+    const field = pending.trim();
+    if (!field || groupBy.includes(field)) return;
+    patch({ groupBy: [...groupBy, field] });
+    setPending('');
+  };
+
+  const removeGroup = (index: number) => patch({ groupBy: groupBy.filter((_, i) => i !== index) });
+
+  /** 上移/下移分组键，数组顺序即 GROUP BY 的字段次序。 */
+  const moveGroup = (index: number, dir: -1 | 1) => {
+    const target = index + dir;
+    if (target < 0 || target >= groupBy.length) return;
+    const copy = [...groupBy];
+    [copy[index], copy[target]] = [copy[target], copy[index]];
+    patch({ groupBy: copy });
+  };
+
   return (
     <div className="flex flex-col gap-4">
       <Section title="分组键">
-        <MultiColumnSelect
-          value={config.groupBy ?? []}
-          onChange={(groupBy) => patch({ groupBy })}
-          columns={inCols}
-        />
+        <div className="flex flex-col gap-2">
+          {inCols.length > 0 && (
+            <div className="flex items-center gap-1.5">
+              <ColumnSelect
+                value={pending}
+                onChange={setPending}
+                columns={available}
+                placeholder="选择分组字段"
+                className="flex-1"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={!pending}
+                onClick={addGroup}
+              >
+                <Plus />
+                添加
+              </Button>
+            </div>
+          )}
+          {groupBy.length > 0 ? (
+            <div className="flex flex-col gap-2">
+              {groupBy.map((field, index) => (
+                <RowShell key={field} onRemove={() => removeGroup(index)}>
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-4 shrink-0 text-right text-[11px] text-muted-foreground">
+                      {index + 1}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-xs">{field}</span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      disabled={index === 0}
+                      onClick={() => moveGroup(index, -1)}
+                      title="上移"
+                    >
+                      <ArrowUp className="size-3.5" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      disabled={index === groupBy.length - 1}
+                      onClick={() => moveGroup(index, 1)}
+                      title="下移"
+                    >
+                      <ArrowDown className="size-3.5" />
+                    </Button>
+                  </div>
+                </RowShell>
+              ))}
+            </div>
+          ) : inCols.length > 0 ? (
+            <EmptyHint>尚未选择分组字段（可与下方聚合组合使用）</EmptyHint>
+          ) : (
+            <EmptyHint>暂无可选列（请先运行一次上游节点）</EmptyHint>
+          )}
+        </div>
       </Section>
 
       <Section
