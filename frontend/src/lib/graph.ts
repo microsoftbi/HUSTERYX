@@ -33,3 +33,12 @@ export function upstreamNodeId(
   );
   return edge ? edge.source : null;
 }
+
+/** 找到流入某节点指定端口的全部上游节点 id（按连线顺序）。 */
+export function upstreamNodeIds(edges: WorkflowEdge[], nodeId: string, handle = 'in'): string[] {
+  const ids: string[] = [];
+  for (const edge of edges) {
+    if (edge.target === nodeId && (edge.targetHandle || 'in') === handle) ids.push(edge.source);
+  }
+  return ids;
+}

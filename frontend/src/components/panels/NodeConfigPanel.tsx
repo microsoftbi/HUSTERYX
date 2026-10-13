@@ -13,6 +13,7 @@ import {
   JoinPanel,
   SelectPanel,
   SortPanel,
+  UnionPanel,
 } from '@/components/panels/TransformPanels';
 import {
   OutputCsvPanel,
@@ -46,6 +47,8 @@ function ConfigForm({ node }: { node: WorkflowNode }) {
       return <FilterPanel node={node} />;
     case 'join':
       return <JoinPanel node={node} />;
+    case 'union':
+      return <UnionPanel node={node} />;
     case 'aggregation':
       return <AggregationPanel node={node} />;
     case 'sort':

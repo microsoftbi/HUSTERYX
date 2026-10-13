@@ -8,7 +8,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useWorkflowStore } from '@/store/workflowStore';
-import { upstreamNodeId } from '@/lib/graph';
+import { upstreamNodeId, upstreamNodeIds } from '@/lib/graph';
 import { deriveNodeColumns } from '@/lib/schema';
 import { cn } from '@/lib/utils';
 import type { ColumnMeta, WorkflowNode } from '@/types';
@@ -51,6 +51,31 @@ export function useInputCols(nodeId: string, handle = 'in'): ColumnMeta[] {
     const upstream = upstreamNodeId(edges, nodeId, handle);
     return upstream ? derived[upstream] ?? [] : [];
   }, [derived, edges, nodeId, handle]);
+}
+
+/** 读取某输入端口上连接的多路上游列（按连线顺序），用于 Union 等单端口多输入节点。 */
+export function useInputColsList(
+  nodeId: string,
+  handle = 'in',
+): { nodeId: string; columns: ColumnMeta[] }[] {
+  const nodes = useWorkflowStore((s) => s.nodes);
+  const edges = useWorkflowStore((s) => s.edges);
+  const nodeColumns = useWorkflowStore((s) => s.nodeColumns);
+  const inputSchemas = useWorkflowStore((s) => s.inputSchemas);
+
+  const derived = useMemo(
+    () => deriveNodeColumns(nodes, edges, { ...nodeColumns, ...inputSchemas }),
+    [nodes, edges, nodeColumns, inputSchemas],
+  );
+
+  return useMemo(
+    () =>
+      upstreamNodeIds(edges, nodeId, handle).map((id) => ({
+        nodeId: id,
+        columns: derived[id] ?? [],
+      })),
+    [derived, edges, nodeId, handle],
+  );
 }
 
 export function Field({

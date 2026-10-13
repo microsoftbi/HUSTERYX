@@ -10,6 +10,7 @@ export type NodeKind =
   | 'select'
   | 'filter'
   | 'join'
+  | 'union'
   | 'aggregation'
   | 'sort'
   | 'outputCsv'
@@ -127,6 +128,26 @@ export interface JoinConfig {
   leftKey: string;
   rightKey: string;
   selectFields?: JoinSelectField[];
+}
+
+/** Union 列对齐方式：按列名对齐 或 按位置对齐。 */
+export type UnionMatchMode = 'name' | 'position';
+
+export interface UnionSelectField {
+  /** 合并后的输出列名（按列名/按位置对齐后的列）。 */
+  source: string;
+  alias?: string;
+  /** 是否输出该字段；undefined 视为输出。数组顺序即输出顺序。 */
+  include?: boolean;
+}
+
+export interface UnionConfig {
+  /** 列对齐方式，默认按列名。 */
+  matchMode: UnionMatchMode;
+  /** 是否对合并结果去重（SELECT DISTINCT）。 */
+  dedup: boolean;
+  /** 输出字段配置；为空时等价输出全部合并列。 */
+  selectFields?: UnionSelectField[];
 }
 
 export type AggregationFn = 'sum' | 'count' | 'max' | 'min' | 'avg';

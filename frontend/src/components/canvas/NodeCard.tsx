@@ -31,7 +31,8 @@ export function NodeCard({ data, selected }: NodeProps) {
   const { node, status, rowCount, runActive, inScope, frozen } = data as unknown as HusterNodeData;
   const meta = getNodeMeta(node.kind);
   const Icon = meta.icon;
-  const showLabels = meta.inputs.length > 1;
+  const inputs = meta.inputs;
+  const showLabels = inputs.length > 1;
   const showOutputLabels = meta.outputs.length > 1;
   /** 运行时尚未执行（或已被跳过）的节点：整体置灰，表示「未参与 / 未生效」。
    *  「运行至此」时，范围外的节点不属于本次运行，保持原样。 */
@@ -81,20 +82,20 @@ export function NodeCard({ data, selected }: NodeProps) {
         </div>
       )}
 
-      {meta.inputs.map((input, index) => (
+      {inputs.map((input, index) => (
         <div key={input.id}>
           <Handle
             id={input.id}
             type="target"
             position={Position.Left}
-            style={{ top: `${((index + 1) / (meta.inputs.length + 1)) * 100}%` }}
+            style={{ top: `${((index + 1) / (inputs.length + 1)) * 100}%` }}
           />
           {showLabels && (
             <span
               className="pointer-events-none absolute -translate-y-1/2 text-[7px] text-muted-foreground"
               style={{
                 left: 8,
-                top: `${((index + 1) / (meta.inputs.length + 1)) * 100}%`,
+                top: `${((index + 1) / (inputs.length + 1)) * 100}%`,
               }}
             >
               {input.label}

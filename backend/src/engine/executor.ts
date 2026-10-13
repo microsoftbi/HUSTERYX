@@ -51,8 +51,8 @@ export async function executeWorkflow(runId: string): Promise<void> {
         continue;
       }
       const inputMap = compiled.inputNodes.get(node.id) ?? {};
-      const blocked = Object.values(inputMap).some(
-        ({ source }) => (ctx.nodeResults.get(source)?.status ?? 'pending') !== 'success',
+      const blocked = Object.values(inputMap).some((list) =>
+        list.some(({ source }) => (ctx.nodeResults.get(source)?.status ?? 'pending') !== 'success'),
       );
       if (blocked) {
         markSkipped(ctx, node, '上游节点未成功');
@@ -91,14 +91,20 @@ export async function executeWorkflow(runId: string): Promise<void> {
 async function runNode(
   ctx: RunContext,
   node: WorkflowNode,
-  inputMap: Record<string, { source: string; sourceHandle: string }>,
+  inputMap: Record<string, Array<{ source: string; sourceHandle: string }>>,
 ): Promise<void> {
   const executor = nodeRegistry[node.kind];
   const inputs: Record<string, string> = {};
-  for (const [handle, upstream] of Object.entries(inputMap)) {
-    inputs[handle] = tableNameForNode(upstream.source, upstream.sourceHandle);
+  const inputLists: Record<string, string[]> = {};
+  for (const [handle, upstreams] of Object.entries(inputMap)) {
+    const tables = upstreams.map(({ source, sourceHandle }) =>
+      tableNameForNode(source, sourceHandle),
+    );
+    inputLists[handle] = tables;
+    // 单端口多输入时 inputs 取第一条，兼容只读取单表的执行器。
+    if (tables.length > 0) inputs[handle] = tables[0];
   }
-  const inputList = Object.values(inputs);
+  const inputList = Object.values(inputLists).flat();
   const outputTable = tableNameForNode(node.id);
 
   ctx.nodeStatus.set(node.id, 'running');
@@ -122,6 +128,7 @@ async function runNode(
   const nodeCtx: NodeContext = {
     node,
     inputs,
+    inputLists,
     inputList,
     connection: ctx.session.connection,
     outputTable,

@@ -278,20 +278,32 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
     if (!sourceNode || !targetNode) return;
     const sourceOutputs = NODE_META[sourceNode.kind].outputs;
     if (sourceOutputs.length === 0) return;
-    if (NODE_META[targetNode.kind].inputs.length === 0) return;
+    const targetInputs = NODE_META[targetNode.kind].inputs;
+    if (targetInputs.length === 0) return;
 
     const srcHandle = sourceHandle || sourceOutputs[0].id;
     if (!sourceOutputs.some((output) => output.id === srcHandle)) return;
 
-    const handle = targetHandle || NODE_META[targetNode.kind].inputs[0].id;
-    const validHandle = NODE_META[targetNode.kind].inputs.some((input) => input.id === handle);
+    const handle = targetHandle || targetInputs[0].id;
+    const validHandle = targetInputs.some((input) => input.id === handle);
     if (!validHandle) return;
 
-    // 同一目标端口只允许一条连线
-    const occupied = edges.some(
-      (edge) => edge.target === target && (edge.targetHandle || 'in') === handle,
-    );
-    if (occupied) return;
+    if (targetNode.kind === 'union') {
+      // Union：单一输入端口允许多条连线（纵向拼接），但同一上游不重复连入。
+      const duplicated = edges.some(
+        (edge) =>
+          edge.target === target &&
+          (edge.targetHandle || 'in') === handle &&
+          edge.source === source,
+      );
+      if (duplicated) return;
+    } else {
+      // 其余节点：同一目标端口只允许一条连线。
+      const occupied = edges.some(
+        (edge) => edge.target === target && (edge.targetHandle || 'in') === handle,
+      );
+      if (occupied) return;
+    }
 
     // 阻止成环
     if (reachable(edges, target, source)) return;

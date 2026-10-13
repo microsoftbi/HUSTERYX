@@ -3,8 +3,8 @@ import type { Workflow, WorkflowNode } from '../types.js';
 export interface CompiledGraph {
   /** 拓扑排序后的节点执行顺序 */
   order: WorkflowNode[];
-  /** nodeId -> (targetHandle -> 上游来源：nodeId + 其输出端口) */
-  inputNodes: Map<string, Record<string, { source: string; sourceHandle: string }>>;
+  /** nodeId -> (targetHandle -> 按连线顺序排列的上游来源：nodeId + 其输出端口) */
+  inputNodes: Map<string, Record<string, Array<{ source: string; sourceHandle: string }>>>;
 }
 
 /** 计算 targetNodeId 的全部上游祖先节点 id（不含自身）。 */
@@ -34,7 +34,10 @@ export function compileGraph(workflow: Workflow): CompiledGraph {
   const nodeById = new Map(workflow.nodes.map((n) => [n.id, n]));
   const indegree = new Map<string, number>();
   const adjacency = new Map<string, string[]>();
-  const inputNodes = new Map<string, Record<string, { source: string; sourceHandle: string }>>();
+  const inputNodes = new Map<
+    string,
+    Record<string, Array<{ source: string; sourceHandle: string }>>
+  >();
 
   for (const node of workflow.nodes) {
     indegree.set(node.id, 0);
@@ -50,10 +53,12 @@ export function compileGraph(workflow: Workflow): CompiledGraph {
     indegree.set(edge.target, (indegree.get(edge.target) ?? 0) + 1);
     const handle = edge.targetHandle || 'in';
     const bucket = inputNodes.get(edge.target)!;
-    if (bucket[handle] && bucket[handle].source !== edge.source) {
+    const list = bucket[handle] ?? (bucket[handle] = []);
+    // Union 允许单端口多输入（纵向拼接）；其余节点同一端口只允许一条连线。
+    if (list.length > 0 && nodeById.get(edge.target)!.kind !== 'union') {
       throw new Error(`节点「${nodeById.get(edge.target)!.name}」的输入端口 ${handle} 有多条连线`);
     }
-    bucket[handle] = { source: edge.source, sourceHandle: edge.sourceHandle || 'out' };
+    list.push({ source: edge.source, sourceHandle: edge.sourceHandle || 'out' });
   }
 
   const queue: string[] = [];

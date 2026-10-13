@@ -11,6 +11,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import {
   ColumnSelect,
@@ -18,9 +19,12 @@ import {
   Field,
   Section,
   useInputCols,
+  useInputColsList,
   useNodeConfig,
   type PanelProps,
 } from '@/components/panels/fields';
+import { mergeUnionColumns } from '@/lib/schema';
+import { useWorkflowStore } from '@/store/workflowStore';
 import type {
   AggregationConfig,
   AggregationFn,
@@ -32,6 +36,9 @@ import type {
   SelectField,
   SortConfig,
   SortItem,
+  UnionConfig,
+  UnionMatchMode,
+  UnionSelectField,
 } from '@/types';
 
 /** 列表行外壳：统一边框与删除按钮。 */
@@ -473,10 +480,257 @@ export function JoinPanel({ node }: PanelProps) {
   );
 }
 
+/* ----------------------------- Union 联合 ----------------------------- */
+
+const UNION_MATCH_MODES: { value: UnionMatchMode; label: string }[] = [
+  { value: 'name', label: '按列名（同名同列）' },
+  { value: 'position', label: '按位置（第 N 列对齐）' },
+];
+
+export function UnionPanel({ node }: PanelProps) {
+  const [config, patch] = useNodeConfig<UnionConfig>(node);
+  const edges = useWorkflowStore((s) => s.edges);
+  const nodes = useWorkflowStore((s) => s.nodes);
+  const removeEdge = useWorkflowStore((s) => s.removeEdge);
+
+  const matchMode: UnionMatchMode = config.matchMode === 'position' ? 'position' : 'name';
+  // 单一输入端口承载多路输入，按连线顺序排列。
+  const inputs = useInputColsList(node.id, 'in');
+
+  const inputRows = useMemo(() => {
+    const nameById = new Map(nodes.map((item) => [item.id, item.name]));
+    const list: { edgeId: string; name: string; colCount: number }[] = [];
+    for (const edge of edges) {
+      if (edge.target !== node.id || (edge.targetHandle || 'in') !== 'in') continue;
+      const columns = inputs.find((item) => item.nodeId === edge.source)?.columns ?? [];
+      list.push({
+        edgeId: edge.id,
+        name: nameById.get(edge.source) ?? edge.source,
+        colCount: columns.length,
+      });
+    }
+    return list;
+  }, [edges, inputs, node.id, nodes]);
+
+  const mergedCols = useMemo(
+    () => mergeUnionColumns(inputs.map((item) => item.columns), matchMode),
+    [inputs, matchMode],
+  );
+
+  /** 合并后字段的默认行：原样列出全部列。 */
+  const defaultRows = useMemo<UnionSelectField[]>(
+    () => mergedCols.map((col) => ({ source: col.name, alias: col.name, include: true })),
+    [mergedCols],
+  );
+
+  /** 展示行：以合并列为准，叠加已保存的勾选/重命名/排序；新增列自动追加在末尾。 */
+  const rows = useMemo<UnionSelectField[]>(() => {
+    const configured = config.selectFields ?? [];
+    if (configured.length === 0) return defaultRows;
+    const saved = new Map(configured.map((f) => [f.source, f]));
+    const merged = defaultRows.map((row) => {
+      const hit = saved.get(row.source);
+      return hit ? { ...row, include: hit.include !== false, alias: hit.alias ?? row.alias } : row;
+    });
+    const order = new Map(configured.map((f, index) => [f.source, index]));
+    return merged.slice().sort((a, b) => {
+      const ia = order.get(a.source);
+      const ib = order.get(b.source);
+      if (ia === undefined && ib === undefined) return 0;
+      if (ia === undefined) return 1;
+      if (ib === undefined) return -1;
+      return ia - ib;
+    });
+  }, [defaultRows, config.selectFields]);
+
+  const commit = (next: UnionSelectField[]) =>
+    patch({
+      selectFields: next.map((row) => ({
+        source: row.source,
+        alias: row.alias ?? '',
+        include: row.include !== false,
+      })),
+    });
+
+  const update = (index: number, p: Partial<UnionSelectField>) =>
+    commit(rows.map((row, i) => (i === index ? { ...row, ...p } : row)));
+
+  const move = (index: number, dir: -1 | 1) => {
+    const target = index + dir;
+    if (target < 0 || target >= rows.length) return;
+    const copy = rows.slice();
+    [copy[index], copy[target]] = [copy[target], copy[index]];
+    commit(copy);
+  };
+
+  const includedCount = rows.filter((row) => row.include !== false).length;
+  const allIncluded = rows.length > 0 && includedCount === rows.length;
+
+  return (
+    <div className="flex flex-col gap-4">
+      <Section title="输入">
+        <div className="flex flex-col gap-2">
+          {inputRows.length === 0 ? (
+            <EmptyHint>拖拽连线到左侧输入端口，可连接多路输入</EmptyHint>
+          ) : (
+            inputRows.map((row, index) => (
+              <div
+                key={row.edgeId}
+                className="flex items-center gap-2 rounded-md border border-border p-2"
+              >
+                <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-medium text-muted-foreground">
+                  {index + 1}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-xs">{row.name}</div>
+                  <div className="text-[10px] text-muted-foreground">{row.colCount} 列</div>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  className="text-muted-foreground hover:text-destructive"
+                  title="断开该输入"
+                  onClick={() => removeEdge(row.edgeId)}
+                >
+                  <Trash2 className="size-3.5" />
+                </Button>
+              </div>
+            ))
+          )}
+        </div>
+        <p className="text-[10px] leading-relaxed text-muted-foreground">
+          自上而下即纵向拼接顺序（按连线先后），可连接多路输入，至少需要两路。
+        </p>
+      </Section>
+
+      <Field label="列对齐方式" hint="按列名：同名归并为同一列，缺少的列补空值；按位置：各端口第 N 列对齐。">
+        <Select
+          value={matchMode}
+          onValueChange={(value) => patch({ matchMode: value as UnionMatchMode })}
+        >
+          <SelectTrigger className="h-8 text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {UNION_MATCH_MODES.map((mode) => (
+              <SelectItem key={mode.value} value={mode.value}>
+                {mode.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </Field>
+
+      <div className="flex items-center justify-between rounded-md border border-border px-2.5 py-2">
+        <div className="min-w-0">
+          <div className="text-xs font-medium">去重</div>
+          <div className="text-[10px] leading-relaxed text-muted-foreground">
+            对合并结果去除完全相同的行（SELECT DISTINCT）
+          </div>
+        </div>
+        <Switch checked={config.dedup === true} onCheckedChange={(checked) => patch({ dedup: checked })} />
+      </div>
+
+      <Section
+        title="输出字段"
+        action={
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={rows.length === 0}
+            onClick={() => patch({ selectFields: undefined })}
+          >
+            <Wand2 />
+            按合并列重置
+          </Button>
+        }
+      >
+        {rows.length === 0 ? (
+          <EmptyHint>请先连接上游节点以获取字段</EmptyHint>
+        ) : (
+          <>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-8">
+                    <input
+                      type="checkbox"
+                      ref={(el) => {
+                        if (el) el.indeterminate = includedCount > 0 && !allIncluded;
+                      }}
+                      checked={allIncluded}
+                      onChange={() => commit(rows.map((row) => ({ ...row, include: !allIncluded })))}
+                      title="全选 / 全不选"
+                    />
+                  </TableHead>
+                  <TableHead>字段名</TableHead>
+                  <TableHead className="w-28">重命名</TableHead>
+                  <TableHead className="w-12 text-right">顺序</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {rows.map((row, index) => (
+                  <TableRow key={row.source}>
+                    <TableCell>
+                      <input
+                        type="checkbox"
+                        checked={row.include !== false}
+                        onChange={(event) => update(index, { include: event.target.checked })}
+                        title="是否输出该字段"
+                      />
+                    </TableCell>
+                    <TableCell className="font-mono text-xs text-foreground">{row.source}</TableCell>
+                    <TableCell>
+                      <Input
+                        value={row.alias ?? ''}
+                        onChange={(event) => update(index, { alias: event.target.value })}
+                        placeholder={row.source}
+                        className="h-7 text-xs"
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center justify-end gap-0.5">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          disabled={index === 0}
+                          onClick={() => move(index, -1)}
+                          title="上移"
+                        >
+                          <ArrowUp className="size-3.5" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          disabled={index === rows.length - 1}
+                          onClick={() => move(index, 1)}
+                          title="下移"
+                        >
+                          <ArrowDown className="size-3.5" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+            <p className="text-[10px] leading-relaxed text-muted-foreground">
+              取消勾选则不输出该字段，列表从上到下即输出顺序（已选 {includedCount} / {rows.length}）。
+            </p>
+          </>
+        )}
+      </Section>
+    </div>
+  );
+}
+
 /* ----------------------------- Aggregation 汇总 ----------------------------- */
 
 const AGG_FNS: AggregationFn[] = ['sum', 'count', 'max', 'min', 'avg'];
-
 export function AggregationPanel({ node }: PanelProps) {
   const [config, patch] = useNodeConfig<AggregationConfig>(node);
   const inCols = useInputCols(node.id);

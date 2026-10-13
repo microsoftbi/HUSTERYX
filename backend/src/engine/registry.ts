@@ -6,6 +6,7 @@ import { inputSqlServer } from '../nodes/inputSqlServer.js';
 import { select } from '../nodes/select.js';
 import { filter } from '../nodes/filter.js';
 import { join } from '../nodes/join.js';
+import { union } from '../nodes/union.js';
 import { aggregation } from '../nodes/aggregation.js';
 import { sort } from '../nodes/sort.js';
 import { outputCsv } from '../nodes/outputCsv.js';
@@ -21,6 +22,7 @@ export const nodeRegistry: Record<NodeKind, NodeExecutor> = {
   select,
   filter,
   join,
+  union,
   aggregation,
   sort,
   outputCsv,

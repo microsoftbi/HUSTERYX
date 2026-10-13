@@ -7,9 +7,11 @@ export interface NodeLogLevel {
 
 export interface NodeContext {
   node: WorkflowNode;
-  /** targetHandle -> 上游表名（一般节点为 'in'，Join 为 'left' / 'right'） */
+  /** targetHandle -> 上游表名（一般节点为 'in'，Join 为 'left' / 'right'）；单端口多输入时取第一条。 */
   inputs: Record<string, string>;
-  /** 按连线顺序排列的上游表名 */
+  /** targetHandle -> 按连线顺序排列的上游表名（Union 等单端口多输入节点会用到全部元素）。 */
+  inputLists: Record<string, string[]>;
+  /** 按连线顺序排列的全部上游表名 */
   inputList: string[];
   connection: DuckDBConnection;
   /** 本节点主输出（'out'）的表名 */

@@ -5,10 +5,12 @@ import type {
   JoinConfig,
   NodeKind,
   SelectConfig,
+  UnionConfig,
+  UnionMatchMode,
   WorkflowEdge,
   WorkflowNode,
 } from '@/types';
-import { upstreamNodeId } from '@/lib/graph';
+import { upstreamNodeId, upstreamNodeIds } from '@/lib/graph';
 
 export type NodeColumns = Record<string, ColumnMeta[]>;
 
@@ -26,6 +28,50 @@ function aggType(fn: AggregationFn, field: string, lookup: Map<string, string>):
   if (fn === 'count') return 'BIGINT';
   if (fn === 'sum' || fn === 'avg') return 'DOUBLE';
   return lookup.get(field) ?? 'unknown';
+}
+
+/**
+ * 合并多路输入列（镜像后端 union.ts 的 mergeUnionColumns）。
+ * - 按列名：取并集，保留首次出现顺序，同名只保留一次。
+ * - 按位置：按索引对齐，列名取首个非空端口，重叠名以 `_2`、`_3` 递增去重。
+ */
+export function mergeUnionColumns(ports: ColumnMeta[][], matchMode: UnionMatchMode): ColumnMeta[] {
+  if (matchMode === 'position') {
+    const maxLen = ports.reduce((max, cols) => Math.max(max, cols.length), 0);
+    const used = new Set<string>();
+    const out: ColumnMeta[] = [];
+    for (let i = 0; i < maxLen; i += 1) {
+      let base = '';
+      let type = 'unknown';
+      for (const cols of ports) {
+        if (i < cols.length) {
+          base = cols[i].name;
+          type = cols[i].type;
+          break;
+        }
+      }
+      let candidate = base;
+      let k = 2;
+      while (used.has(candidate)) {
+        candidate = `${base}_${k}`;
+        k += 1;
+      }
+      used.add(candidate);
+      out.push({ name: candidate, type });
+    }
+    return out;
+  }
+
+  const seen = new Set<string>();
+  const out: ColumnMeta[] = [];
+  for (const cols of ports) {
+    for (const col of cols) {
+      if (seen.has(col.name)) continue;
+      seen.add(col.name);
+      out.push({ name: col.name, type: col.type });
+    }
+  }
+  return out;
 }
 
 /**
@@ -157,6 +203,22 @@ function derive(
         out.push({ name: candidate, type: c.type });
       }
       return out;
+    }
+
+    case 'union': {
+      const cfg = node.config as unknown as Partial<UnionConfig>;
+      // 单一输入端口可连接多条连线，按连线顺序取全部上游列。
+      const merged = mergeUnionColumns(
+        upstreamNodeIds(edges, node.id, 'in').map((id) => resolve(id)),
+        cfg.matchMode === 'position' ? 'position' : 'name',
+      );
+      const configured = (cfg.selectFields ?? []).filter((f) => f && f.include !== false);
+      if (configured.length === 0) return merged;
+      const types = lookup(merged);
+      return configured.map((f) => ({
+        name: f.alias && f.alias.length > 0 ? f.alias : f.source,
+        type: types.get(f.source) ?? 'unknown',
+      }));
     }
 
     default:
