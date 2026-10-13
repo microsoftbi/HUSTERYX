@@ -8,9 +8,10 @@
     "dev:backend": "pnpm --filter @husteryx/backend dev",
     "dev:frontend": "pnpm --filter @husteryx/frontend dev",
     "build": "pnpm --filter @husteryx/backend build && pnpm --filter @husteryx/frontend build",
+    "desktop:prepare": "node scripts/prepare-sidecar.mjs",
     "tauri": "tauri",
     "desktop": "tauri dev",
-    "desktop:build": "tauri build"
+    "desktop:build": "pnpm desktop:prepare && tauri build"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.9.3",
