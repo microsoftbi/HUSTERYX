@@ -75,6 +75,11 @@ fn spawn_sidecar(
 
     let base_url = format!("http://127.0.0.1:{port}");
     *state.local_base_url.lock().unwrap() = base_url.clone();
+    // 让生效配置指向本次实际选定的端口（重启会换端口，必须同步，否则前端拿到陈旧 baseUrl）
+    *state.config.lock().unwrap() = ServerConfig {
+        mode: "local".into(),
+        base_url: base_url.clone(),
+    };
 
     let app_handle = app.clone();
     std::thread::spawn(move || {
@@ -152,12 +157,7 @@ pub fn run() {
             if !cfg!(debug_assertions) {
                 let state = app.state::<AppState>();
                 match spawn_sidecar(&app.handle().clone(), &state) {
-                    Ok(url) => {
-                        let mut cfg = state.config.lock().unwrap();
-                        cfg.mode = "local".into();
-                        cfg.base_url = url.clone();
-                        eprintln!("HUSTERYX sidecar 就绪：{url}");
-                    }
+                    Ok(url) => eprintln!("HUSTERYX sidecar 就绪：{url}"),
                     Err(e) => eprintln!("HUSTERYX sidecar 启动失败：{e}"),
                 }
             }
