@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- 桌面版需要访问局域网内的数据库服务器（如 SQL Server），
+	     macOS 15+ 的“本地网络”隐私权限要求声明用途，否则连接会被静默拒绝。 -->
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>HUSTERYX 需要访问本地网络，以连接您局域网内的数据库服务器（例如 SQL Server）。</string>
+</dict>
+</plist>
