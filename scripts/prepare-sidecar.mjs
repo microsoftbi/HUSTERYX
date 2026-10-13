@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { chmodSync, cpSync, existsSync, mkdirSync, rmSync } from 'node:fs';
+import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -36,6 +36,18 @@ cpSync(path.join(root, 'backend', 'package.json'), path.join(backendDest, 'packa
 
 if (!existsSync(path.join(backendDest, 'node_modules', '@duckdb'))) {
   throw new Error('deploy 未包含 @duckdb 生产依赖，请检查 pnpm deploy 输出');
+}
+// 软链防护：Tauri 打包 resources 会丢弃符号链接。若 pnpm deploy 用默认 node-linker
+// （软链 + .pnpm 虚拟 store），顶层关键依赖会变成软链，.app 内后端启动即
+// ERR_MODULE_NOT_FOUND（如 'fastify'）。故断言关键依赖为真实目录（非软链），
+// 确保 node-linker=hoisted 生效。
+for (const dep of ['fastify', '@duckdb']) {
+  const depPath = path.join(backendDest, 'node_modules', dep);
+  if (!existsSync(depPath) || lstatSync(depPath).isSymbolicLink()) {
+    throw new Error(
+      `生产依赖 ${dep} 缺失或为软链：依赖为软链时 Tauri 打包会丢失，需使用 --config.node-linker=hoisted 部署`,
+    );
+  }
 }
 if (!existsSync(path.join(backendDest, 'dist', 'index.js'))) {
   throw new Error('缺少 backend/dist/index.js');
