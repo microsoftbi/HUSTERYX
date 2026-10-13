@@ -1,4 +1,4 @@
-import { API_BASE } from '@/api/client';
+import { getApiBase } from '@/api/client';
 import type { NodeResultEvent, RunLogEvent, RunStatusEvent, SseEvent } from '@/types';
 
 function isNodeResult(event: SseEvent): event is NodeResultEvent {
@@ -21,7 +21,7 @@ export interface RunStreamHandlers {
  * 运行结束（success/error）后自动关闭连接。
  */
 export function subscribeRun(runId: string, handlers: RunStreamHandlers): () => void {
-  const source = new EventSource(`${API_BASE}/api/runs/${runId}/events`);
+  const source = new EventSource(`${getApiBase()}/api/runs/${runId}/events`);
 
   source.onmessage = (message) => {
     if (!message.data) return;

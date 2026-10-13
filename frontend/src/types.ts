@@ -241,3 +241,11 @@ export interface AppSettings {
   /** 数据预览时每个组件从缓存中取回的行数上限，所有组件共用。 */
   previewRowLimit: number;
 }
+
+/* ----------------------------- 桌面连接配置 ----------------------------- */
+
+export interface ServerConfig {
+  /** local = 内置引擎；remote = 企业服务器 */
+  mode: 'local' | 'remote';
+  baseUrl: string;
+}

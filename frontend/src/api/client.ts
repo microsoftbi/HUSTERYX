@@ -10,10 +10,30 @@ import type {
   WorkflowSummary,
 } from '@/types';
 
-/** 后端基地址：开发时为独立 Fastify 进程，打包后由 Tauri sidecar 提供。 */
-export const API_BASE: string =
+/** 后端基地址：纯浏览器 dev 回退到 VITE_API_BASE / :8787，Tauri 环境由 initApiBase 设定。 */
+let apiBase: string =
   (import.meta.env.VITE_API_BASE as string | undefined)?.replace(/\/$/, '') ??
   'http://127.0.0.1:8787';
+
+export function getApiBase(): string {
+  return apiBase;
+}
+
+export function setApiBase(base: string): void {
+  apiBase = base.replace(/\/$/, '');
+}
+
+/** 启动时解析后端基地址：Tauri 环境读取 Rust 提供的 server config。 */
+export async function initApiBase(): Promise<void> {
+  const { isTauri, getServerConfig } = await import('@/lib/desktop');
+  if (!isTauri()) return;
+  try {
+    const config = await getServerConfig();
+    setApiBase(config.baseUrl);
+  } catch {
+    /* 保持回退地址 */
+  }
+}
 
 class RequestError extends Error {
   status: number;
@@ -27,7 +47,7 @@ class RequestError extends Error {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await fetch(`${apiBase}${path}`, {
     headers: init?.body instanceof FormData ? undefined : { 'Content-Type': 'application/json' },
     ...init,
   });
