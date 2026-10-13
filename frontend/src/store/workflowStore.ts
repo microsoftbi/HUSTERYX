@@ -3,6 +3,7 @@ import { api } from '@/api/client';
 import { subscribeRun } from '@/api/sse';
 import { NODE_META, getNodeMeta } from '@/lib/nodeMeta';
 import type {
+  AppSettings,
   ColumnMeta,
   NodeKind,
   NodeRunStatus,
@@ -58,6 +59,9 @@ interface WorkflowState {
   inputSchemas: Record<string, ColumnMeta[]>;
   inputSchemaSignatures: Record<string, string>;
 
+  /* 应用设置（全局，所有组件共用） */
+  settings: AppSettings;
+
   /* 画布操作 */
   addNode: (kind: NodeKind, position: { x: number; y: number }) => void;
   updateNodeName: (nodeId: string, name: string) => void;
@@ -69,6 +73,10 @@ interface WorkflowState {
   selectNode: (nodeId: string | null) => void;
   probeInputNode: (nodeId: string) => Promise<void>;
   probeAllInputs: () => Promise<void>;
+
+  /* 应用设置 */
+  loadSettings: () => Promise<void>;
+  updateSettings: (patch: Partial<AppSettings>) => Promise<void>;
 
   /* 工作流操作 */
   newWorkflow: () => void;
@@ -201,6 +209,7 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
   nodeColumns: {},
   inputSchemas: {},
   inputSchemaSignatures: {},
+  settings: { previewRowLimit: 10000 },
 
   addNode: (kind, position) => {
     const meta = getNodeMeta(kind);
@@ -308,6 +317,25 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
 
   probeAllInputs: async () => {
     await Promise.all(get().nodes.map((node) => get().probeInputNode(node.id)));
+  },
+
+  loadSettings: async () => {
+    try {
+      const settings = await api.getSettings();
+      set({ settings });
+    } catch {
+      /* 后端不可用时沿用当前默认值 */
+    }
+  },
+
+  updateSettings: async (patch) => {
+    const settings = await api.updateSettings({ ...get().settings, ...patch });
+    set({ settings, previews: {} });
+    // 已选节点的预览按新行数立即重取
+    const { selectedNodeId, runStatus, nodeStatus } = get();
+    if (selectedNodeId && runStatus === 'success' && nodeStatus[selectedNodeId] === 'success') {
+      void get().loadPreview(selectedNodeId);
+    }
   },
 
   newWorkflow: () => {
@@ -468,12 +496,13 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
     }
   },
 
-  loadPreview: async (nodeId, limit = 200) => {
-    const { runId } = get();
+  loadPreview: async (nodeId, limit) => {
+    const { runId, settings } = get();
     if (!runId) return;
+    const effectiveLimit = limit ?? settings.previewRowLimit;
     set((state) => ({ previews: { ...state.previews, [nodeId]: { loading: true } } }));
     try {
-      const data = await api.previewNode(runId, nodeId, limit);
+      const data = await api.previewNode(runId, nodeId, effectiveLimit);
       set((state) => ({ previews: { ...state.previews, [nodeId]: { data } } }));
     } catch (error) {
       set((state) => ({

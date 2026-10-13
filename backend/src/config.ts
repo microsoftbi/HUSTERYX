@@ -15,8 +15,8 @@ export const HOST = process.env.HUSTERYX_HOST || '127.0.0.1';
 export const PORT = Number(process.env.HUSTERYX_PORT || 8787);
 
 /** 预览默认返回行数上限 */
-export const PREVIEW_DEFAULT_LIMIT = 200;
-export const PREVIEW_MAX_LIMIT = 5000;
+export const PREVIEW_DEFAULT_LIMIT = 10000;
+export const PREVIEW_MAX_LIMIT = 10000;
 
 /** 运行上下文保留时长（毫秒），用于运行后查看阶段缓存 */
 export const RUN_TTL_MS = 30 * 60 * 1000;

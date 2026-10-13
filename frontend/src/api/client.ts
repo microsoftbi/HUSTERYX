@@ -1,5 +1,6 @@
 import type {
   ApiError,
+  AppSettings,
   FileUploadResult,
   PreviewResult,
   RunDetail,
@@ -59,7 +60,7 @@ export const api = {
       body: JSON.stringify({ workflow }),
     }),
   getRun: (runId: string) => request<RunDetail>(`/api/runs/${runId}`),
-  previewNode: (runId: string, nodeId: string, limit = 200) =>
+  previewNode: (runId: string, nodeId: string, limit = 10000) =>
     request<PreviewResult>(
       `/api/runs/${runId}/preview/${encodeURIComponent(nodeId)}?limit=${limit}`,
     ),
@@ -96,6 +97,11 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
+
+  /* ----------------------------- 设置 ----------------------------- */
+  getSettings: () => request<AppSettings>('/api/settings'),
+  updateSettings: (body: Partial<AppSettings>) =>
+    request<AppSettings>('/api/settings', { method: 'PUT', body: JSON.stringify(body) }),
 };
 
 export type { RequestError };

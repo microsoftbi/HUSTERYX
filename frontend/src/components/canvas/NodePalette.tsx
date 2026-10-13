@@ -1,4 +1,7 @@
+import { useState } from 'react';
+import { Settings } from 'lucide-react';
 import { CATEGORY_ACCENT, NODE_CATEGORY_LABEL, NODE_META, type NodeCategory } from '@/lib/nodeMeta';
+import { SettingsDialog } from '@/components/settings/SettingsDialog';
 import { useWorkflowStore } from '@/store/workflowStore';
 import { cn } from '@/lib/utils';
 
@@ -8,6 +11,7 @@ const CATEGORIES: NodeCategory[] = ['input', 'transform', 'output'];
 export function NodePalette() {
   const runStatus = useWorkflowStore((s) => s.runStatus);
   const running = runStatus === 'running';
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   return (
     <div className="flex h-16 shrink-0 items-stretch border-b border-border bg-card/40 px-3">
@@ -57,7 +61,30 @@ export function NodePalette() {
             </div>
           </div>
         ))}
+
+        <div className="flex shrink-0 items-stretch gap-3">
+          <div className="my-2 w-px shrink-0 bg-border" />
+          <div className="flex shrink-0 flex-col justify-center gap-1">
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setSettingsOpen(true)}
+                title="系统配置"
+                className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-card px-2 py-1.5 transition-colors hover:border-primary/60 hover:bg-accent"
+              >
+                <div className="flex size-5 shrink-0 items-center justify-center rounded bg-slate-500 text-white">
+                  <Settings className="size-3" />
+                </div>
+                <span className="whitespace-nowrap text-xs font-medium">配置</span>
+              </button>
+            </div>
+            <span className="text-center text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+              系统
+            </span>
+          </div>
+        </div>
       </div>
+      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
       {running && (
         <span className="ml-3 shrink-0 self-center text-[10px] text-muted-foreground">
           运行中，画布与配置已锁定。

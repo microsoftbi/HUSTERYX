@@ -234,3 +234,10 @@ export interface ApiError {
   error: string;
   detail?: string;
 }
+
+/* ----------------------------- 应用设置 ----------------------------- */
+
+export interface AppSettings {
+  /** 数据预览时每个组件从缓存中取回的行数上限，所有组件共用。 */
+  previewRowLimit: number;
+}
