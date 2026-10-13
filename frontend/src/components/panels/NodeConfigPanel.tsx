@@ -1,4 +1,4 @@
-import { Trash2, X } from 'lucide-react';
+import { Lock, Trash2, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -69,6 +69,7 @@ export function NodeConfigPanel() {
   const updateNodeName = useWorkflowStore((s) => s.updateNodeName);
   const removeNode = useWorkflowStore((s) => s.removeNode);
   const selectNode = useWorkflowStore((s) => s.selectNode);
+  const cachedNodeIds = useWorkflowStore((s) => s.cachedNodeIds);
 
   if (!node) {
     return (
@@ -86,6 +87,9 @@ export function NodeConfigPanel() {
   const status = nodeStatus ?? 'pending';
   const statusBadge = STATUS_BADGE[status];
   const running = runStatus === 'running';
+  /** 被「缓存至此」冻结的节点：只读，不可改名或删除。 */
+  const frozen = cachedNodeIds.includes(node.id);
+  const locked = running || frozen;
 
   return (
     <aside className="flex w-80 shrink-0 flex-col border-r border-border bg-card/40">
@@ -101,7 +105,7 @@ export function NodeConfigPanel() {
         <div className="min-w-0 flex-1">
           <Input
             value={node.name}
-            disabled={running}
+            disabled={locked}
             onChange={(event) => updateNodeName(node.id, event.target.value)}
             className="h-7 px-1.5 text-sm font-medium"
           />
@@ -118,7 +122,7 @@ export function NodeConfigPanel() {
           size="icon-sm"
           className="shrink-0 text-muted-foreground hover:text-destructive"
           title="删除节点"
-          disabled={running}
+          disabled={locked}
           onClick={() => removeNode(node.id)}
         >
           <Trash2 className="size-3.5" />
@@ -140,10 +144,21 @@ export function NodeConfigPanel() {
           运行中，配置已锁定。
         </div>
       )}
+      {frozen && !running && (
+        <div className="flex shrink-0 items-center gap-1.5 border-b border-sky-500/40 bg-sky-500/10 px-3 py-1.5 text-[11px] text-sky-400">
+          <Lock className="size-3" />
+          已缓存冻结，不可修改；后续运行将从缓存之后继续。
+        </div>
+      )}
       <div
         className={cn(
           'min-h-0 flex-1 overflow-y-auto px-3 py-3',
+          // 运行中：整体锁死不可交互。
           running && 'pointer-events-none select-none opacity-60',
+          // 冻结：可滚动查看，但表单控件不可编辑。
+          frozen &&
+            !running &&
+            'select-none opacity-60 [&_button]:pointer-events-none [&_input]:pointer-events-none [&_select]:pointer-events-none [&_textarea]:pointer-events-none',
         )}
       >
         <ConfigForm node={node} />

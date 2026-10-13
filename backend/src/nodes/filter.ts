@@ -11,11 +11,21 @@ export const filter: NodeExecutor = async (ctx) => {
   const expression = (cfg?.expression ?? '').trim();
   if (!expression) throw new Error('Filter 节点缺少过滤表达式');
 
+  const fTable = ctx.outputTableFor('f');
+
+  // T 输出：命中条件的行；F 输出：其余行（含表达式结果为 NULL 的行）。
+  // 用 IS NOT TRUE 保证 T ∪ F = 全部行且互斥。
   await ctx.connection.run(
     `CREATE OR REPLACE TABLE ${quoteIdent(ctx.outputTable)} AS
      SELECT * FROM ${quoteIdent(inputTable)} WHERE (${expression})`,
   );
+  await ctx.connection.run(
+    `CREATE OR REPLACE TABLE ${quoteIdent(fTable)} AS
+     SELECT * FROM ${quoteIdent(inputTable)} WHERE (${expression}) IS NOT TRUE`,
+  );
+
   const rowCount = await countRows(ctx.connection, ctx.outputTable);
-  ctx.log('success', `Filter 完成：命中 ${rowCount} 行`);
+  const fCount = await countRows(ctx.connection, fTable);
+  ctx.log('success', `Filter 完成：T ${rowCount} 行，F ${fCount} 行`);
   return { rowCount };
 };

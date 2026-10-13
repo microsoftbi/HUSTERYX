@@ -4,6 +4,7 @@ import type {
   FileUploadResult,
   PreviewResult,
   RunDetail,
+  SqlObjectRef,
   SqlServerConnection,
   SqlServerTestResult,
   Workflow,
@@ -101,16 +102,31 @@ export const api = {
     request<{ ok: boolean }>(`/api/workflows/${id}`, { method: 'DELETE' }),
 
   /* ----------------------------- 运行 ----------------------------- */
-  runWorkflow: (workflow: Workflow) =>
-    request<{ runId: string }>('/api/runs', {
+  runWorkflow: (
+    workflow: Workflow,
+    targetNodeId?: string,
+    opts?: { freeze?: boolean; cacheToken?: string },
+  ) =>
+    request<{ runId: string; cacheToken?: string; cachedNodeIds?: string[] }>('/api/runs', {
       method: 'POST',
-      body: JSON.stringify({ workflow }),
+      body: JSON.stringify({
+        workflow,
+        ...(targetNodeId ? { targetNodeId } : {}),
+        ...(opts?.freeze ? { freeze: true } : {}),
+        ...(opts?.cacheToken ? { cacheToken: opts.cacheToken } : {}),
+      }),
+    }),
+  /** 取消缓存：关闭后端被钉住的会话。 */
+  deleteCache: (cacheToken: string) =>
+    request<{ ok: boolean }>(`/api/runs/cache/${encodeURIComponent(cacheToken)}`, {
+      method: 'DELETE',
     }),
   getRun: (runId: string) => request<RunDetail>(`/api/runs/${runId}`),
-  previewNode: (runId: string, nodeId: string, limit = 10000) =>
-    request<PreviewResult>(
-      `/api/runs/${runId}/preview/${encodeURIComponent(nodeId)}?limit=${limit}`,
-    ),
+  /** limit 省略时不带行数参数：Browser 节点据此返回全部缓存数据。 */
+  previewNode: (runId: string, nodeId: string, limit?: number) => {
+    const base = `/api/runs/${runId}/preview/${encodeURIComponent(nodeId)}`;
+    return request<PreviewResult>(limit === undefined ? base : `${base}?limit=${limit}`);
+  },
 
   /* ----------------------------- 文件 ----------------------------- */
   uploadFile: async (file: File): Promise<FileUploadResult> => {
@@ -143,6 +159,16 @@ export const api = {
     request<{ columns: { name: string; type: string }[] }>('/api/connections/sqlserver/columns', {
       method: 'POST',
       body: JSON.stringify(body),
+    }),
+  listSqlDatabases: (connection: SqlServerConnection) =>
+    request<{ databases: string[] }>('/api/connections/sqlserver/databases', {
+      method: 'POST',
+      body: JSON.stringify({ connection }),
+    }),
+  listSqlObjects: (connection: SqlServerConnection) =>
+    request<{ objects: SqlObjectRef[] }>('/api/connections/sqlserver/objects', {
+      method: 'POST',
+      body: JSON.stringify({ connection }),
     }),
 
   /* ----------------------------- 设置 ----------------------------- */

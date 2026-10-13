@@ -3,6 +3,13 @@ import { CheckCircle2, Loader2, PlugZap, XCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { api } from '@/api/client';
 import { cn } from '@/lib/utils';
@@ -14,31 +21,35 @@ interface Props {
 }
 
 export function SqlConnectionForm({ connection, onChange }: Props) {
-  const [testing, setTesting] = useState(false);
+  const [connecting, setConnecting] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [databases, setDatabases] = useState<string[]>([]);
 
   const patch = (p: Partial<SqlServerConnection>) => {
     setResult(null);
     onChange({ ...connection, ...p });
   };
 
-  const handleTest = async () => {
-    setTesting(true);
+  const handleConnect = async () => {
+    setConnecting(true);
     setResult(null);
     try {
-      const res = await api.testSqlServer(connection);
-      setResult({
-        ok: res.ok,
-        message: res.ok
-          ? `连接成功${res.version ? ` · ${res.version}` : ''}`
-          : res.message,
-      });
+      const res = await api.listSqlDatabases(connection);
+      setDatabases(res.databases);
+      setResult({ ok: true, message: `连接成功 · ${res.databases.length} 个数据库` });
+      // 已选数据库已不存在时清空，避免保留失效值。
+      if (connection.database && !res.databases.includes(connection.database)) {
+        onChange({ ...connection, database: '' });
+      }
     } catch (err) {
+      setDatabases([]);
       setResult({ ok: false, message: err instanceof Error ? err.message : String(err) });
     } finally {
-      setTesting(false);
+      setConnecting(false);
     }
   };
+
+  const hasDbFallback = Boolean(connection.database) && !databases.includes(connection.database);
 
   return (
     <div className="flex flex-col gap-3">
@@ -61,16 +72,6 @@ export function SqlConnectionForm({ connection, onChange }: Props) {
             className="h-8 text-xs"
           />
         </div>
-      </div>
-
-      <div className="flex flex-col gap-1.5">
-        <Label>数据库</Label>
-        <Input
-          value={connection.database}
-          onChange={(event) => patch({ database: event.target.value })}
-          placeholder="数据库名称"
-          className="h-8 text-xs"
-        />
       </div>
 
       <div className="grid grid-cols-2 gap-2">
@@ -115,11 +116,11 @@ export function SqlConnectionForm({ connection, onChange }: Props) {
           type="button"
           variant="outline"
           size="sm"
-          onClick={handleTest}
-          disabled={testing || !connection.server || !connection.database}
+          onClick={handleConnect}
+          disabled={connecting || !connection.server || !connection.user}
         >
-          {testing ? <Loader2 className="animate-spin" /> : <PlugZap />}
-          测试连接
+          {connecting ? <Loader2 className="animate-spin" /> : <PlugZap />}
+          连接
         </Button>
         {result && (
           <span
@@ -133,6 +134,35 @@ export function SqlConnectionForm({ connection, onChange }: Props) {
               {result.message}
             </span>
           </span>
+        )}
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <Label>数据库</Label>
+        {databases.length > 0 ? (
+          <Select
+            value={connection.database || ''}
+            onValueChange={(value) => patch({ database: value })}
+          >
+            <SelectTrigger className="h-8 text-xs">
+              <SelectValue placeholder="选择数据库" />
+            </SelectTrigger>
+            <SelectContent>
+              {hasDbFallback && <SelectItem value={connection.database}>{connection.database}</SelectItem>}
+              {databases.map((name) => (
+                <SelectItem key={name} value={name}>
+                  {name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : (
+          <Input
+            value={connection.database}
+            onChange={(event) => patch({ database: event.target.value })}
+            placeholder="点击「连接」加载数据库列表，或直接填写"
+            className="h-8 text-xs"
+          />
         )}
       </div>
     </div>

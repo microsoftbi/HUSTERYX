@@ -17,7 +17,11 @@ export async function buildServer(): Promise<FastifyInstance> {
     bodyLimit: 64 * 1024 * 1024,
   });
 
-  await app.register(cors, { origin: true });
+  // @fastify/cors 默认仅放行 GET/HEAD/POST，需显式声明 PUT/PATCH/DELETE，否则预检被浏览器拦截。
+  await app.register(cors, {
+    origin: true,
+    methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  });
   await app.register(multipart, {
     limits: { fileSize: 1024 * 1024 * 1024, files: 1 },
   });

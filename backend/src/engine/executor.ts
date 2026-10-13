@@ -1,10 +1,11 @@
 import type { WorkflowNode } from '../types.js';
 import type { NodeContext } from '../nodes/context.js';
 import { tableNameForNode } from '../util/sqlIdent.js';
-import { compileGraph } from './graph.js';
+import { ancestorNodeIds, compileGraph } from './graph.js';
 import { nodeRegistry } from './registry.js';
 import {
   getRun,
+  pinRun,
   publishLog,
   publishNodeResult,
   publishRunStatus,
@@ -21,16 +22,37 @@ export async function executeWorkflow(runId: string): Promise<void> {
 
   try {
     const compiled = compileGraph(ctx.workflow);
-    publishLog(ctx, 'info', `共 ${compiled.order.length} 个节点，按拓扑顺序执行`);
+    // 「运行至此」：仅执行目标节点及其全部上游祖先；其余节点不参与本次运行。
+    const scope = ctx.targetNodeId
+      ? new Set([...ancestorNodeIds(ctx.workflow, ctx.targetNodeId), ctx.targetNodeId])
+      : null;
+    if (scope) {
+      const targetName =
+        ctx.workflow.nodes.find((n) => n.id === ctx.targetNodeId)?.name ?? ctx.targetNodeId;
+      publishLog(ctx, 'info', `运行至此：执行「${targetName}」及其上游共 ${scope.size} 个节点`);
+    } else if (ctx.skipNodeIds && ctx.skipNodeIds.size > 0) {
+      publishLog(ctx, 'info', `从缓存继续：跳过前 ${ctx.skipNodeIds.size} 个缓存节点`);
+    } else {
+      publishLog(ctx, 'info', `共 ${compiled.order.length} 个节点，按拓扑顺序执行`);
+    }
 
     for (const node of compiled.order) {
+      // 范围外的节点（下游 / 无关分支）不执行、不置状态，保持原样。
+      if (scope && !scope.has(node.id)) continue;
+      // 复用缓存运行：缓存节点直接沿用结果，跳过执行。
+      const cached = ctx.skipNodeIds?.has(node.id) ? ctx.nodeResults.get(node.id) : undefined;
+      if (cached && cached.status === 'success') {
+        publishNodeResult(ctx, node.id, 'success', cached.rowCount, cached.durationMs);
+        publishLog(ctx, 'info', `「${node.name}」使用缓存结果（${cached.rowCount} 行）`, node.id);
+        continue;
+      }
       if (ctx.status === 'error') {
         markSkipped(ctx, node, '上游节点执行失败');
         continue;
       }
       const inputMap = compiled.inputNodes.get(node.id) ?? {};
       const blocked = Object.values(inputMap).some(
-        (upstreamId) => (ctx.nodeResults.get(upstreamId)?.status ?? 'pending') !== 'success',
+        ({ source }) => (ctx.nodeResults.get(source)?.status ?? 'pending') !== 'success',
       );
       if (blocked) {
         markSkipped(ctx, node, '上游节点未成功');
@@ -48,6 +70,13 @@ export async function executeWorkflow(runId: string): Promise<void> {
       publishLog(ctx, 'error', `工作流执行失败：${message}`);
     } else {
       ctx.status = 'success';
+      // 「缓存至此」：成功后钉住本次会话，供后续运行从缓存之后继续。
+      if (ctx.freeze && ctx.cacheToken && scope) {
+        pinRun(ctx.runId, scope, ctx.targetNodeId ?? '');
+        const boundaryName =
+          ctx.workflow.nodes.find((n) => n.id === ctx.targetNodeId)?.name ?? ctx.targetNodeId;
+        publishLog(ctx, 'success', `已缓存至「${boundaryName}」，后续运行将从缓存之后继续`);
+      }
       publishRunStatus(ctx, 'success', '工作流执行完成');
       publishLog(ctx, 'success', '工作流执行完成');
     }
@@ -62,12 +91,12 @@ export async function executeWorkflow(runId: string): Promise<void> {
 async function runNode(
   ctx: RunContext,
   node: WorkflowNode,
-  inputMap: Record<string, string>,
+  inputMap: Record<string, { source: string; sourceHandle: string }>,
 ): Promise<void> {
   const executor = nodeRegistry[node.kind];
   const inputs: Record<string, string> = {};
-  for (const [handle, upstreamId] of Object.entries(inputMap)) {
-    inputs[handle] = tableNameForNode(upstreamId);
+  for (const [handle, upstream] of Object.entries(inputMap)) {
+    inputs[handle] = tableNameForNode(upstream.source, upstream.sourceHandle);
   }
   const inputList = Object.values(inputs);
   const outputTable = tableNameForNode(node.id);
@@ -96,6 +125,7 @@ async function runNode(
     inputList,
     connection: ctx.session.connection,
     outputTable,
+    outputTableFor: (handle) => tableNameForNode(node.id, handle),
     log: (level, message) => publishLog(ctx, level, message, node.id),
   };
 

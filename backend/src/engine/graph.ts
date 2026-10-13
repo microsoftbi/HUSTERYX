@@ -3,8 +3,30 @@ import type { Workflow, WorkflowNode } from '../types.js';
 export interface CompiledGraph {
   /** 拓扑排序后的节点执行顺序 */
   order: WorkflowNode[];
-  /** nodeId -> (targetHandle -> 上游 nodeId) */
-  inputNodes: Map<string, Record<string, string>>;
+  /** nodeId -> (targetHandle -> 上游来源：nodeId + 其输出端口) */
+  inputNodes: Map<string, Record<string, { source: string; sourceHandle: string }>>;
+}
+
+/** 计算 targetNodeId 的全部上游祖先节点 id（不含自身）。 */
+export function ancestorNodeIds(workflow: Workflow, targetNodeId: string): Set<string> {
+  const incoming = new Map<string, string[]>();
+  for (const edge of workflow.edges) {
+    const list = incoming.get(edge.target) ?? [];
+    list.push(edge.source);
+    incoming.set(edge.target, list);
+  }
+  const seen = new Set<string>();
+  const stack = [targetNodeId];
+  while (stack.length > 0) {
+    const current = stack.pop()!;
+    for (const parent of incoming.get(current) ?? []) {
+      if (!seen.has(parent)) {
+        seen.add(parent);
+        stack.push(parent);
+      }
+    }
+  }
+  return seen;
 }
 
 /** 编译 DAG：校验连线、做拓扑排序并检测环。 */
@@ -12,7 +34,7 @@ export function compileGraph(workflow: Workflow): CompiledGraph {
   const nodeById = new Map(workflow.nodes.map((n) => [n.id, n]));
   const indegree = new Map<string, number>();
   const adjacency = new Map<string, string[]>();
-  const inputNodes = new Map<string, Record<string, string>>();
+  const inputNodes = new Map<string, Record<string, { source: string; sourceHandle: string }>>();
 
   for (const node of workflow.nodes) {
     indegree.set(node.id, 0);
@@ -28,10 +50,10 @@ export function compileGraph(workflow: Workflow): CompiledGraph {
     indegree.set(edge.target, (indegree.get(edge.target) ?? 0) + 1);
     const handle = edge.targetHandle || 'in';
     const bucket = inputNodes.get(edge.target)!;
-    if (bucket[handle] && bucket[handle] !== edge.source) {
+    if (bucket[handle] && bucket[handle].source !== edge.source) {
       throw new Error(`节点「${nodeById.get(edge.target)!.name}」的输入端口 ${handle} 有多条连线`);
     }
-    bucket[handle] = edge.source;
+    bucket[handle] = { source: edge.source, sourceHandle: edge.sourceHandle || 'out' };
   }
 
   const queue: string[] = [];

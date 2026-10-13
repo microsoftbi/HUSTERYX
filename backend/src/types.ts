@@ -14,7 +14,8 @@ export type NodeKind =
   | 'sort'
   | 'outputCsv'
   | 'outputExcel'
-  | 'outputSqlServer';
+  | 'outputSqlServer'
+  | 'browser';
 
 export const NODE_KINDS: NodeKind[] = [
   'inputCsv',
@@ -28,6 +29,7 @@ export const NODE_KINDS: NodeKind[] = [
   'outputCsv',
   'outputExcel',
   'outputSqlServer',
+  'browser',
 ];
 
 export interface Position {
@@ -85,8 +87,20 @@ export interface InputExcelConfig {
   hasHeader?: boolean;
 }
 
+/** SQL Server 对象类型：表或视图。 */
+export type SqlObjectType = 'table' | 'view';
+
+/** SQL Server 表/视图引用（用于输入节点记录所选对象）。 */
+export interface SqlObjectRef {
+  schema: string;
+  name: string;
+  type: SqlObjectType;
+}
+
 export interface InputSqlServerConfig {
   connection: SqlServerConnection;
+  /** 记录所选表/视图，仅用于重新打开面板时回显。 */
+  object?: SqlObjectRef;
   query: string;
 }
 

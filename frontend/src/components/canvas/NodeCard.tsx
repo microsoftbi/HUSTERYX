@@ -1,5 +1,5 @@
 import { Handle, Position, type NodeProps, type NodeTypes } from '@xyflow/react';
-import { AlertTriangle, CheckCircle2, Loader2 } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Loader2, Lock } from 'lucide-react';
 import { CATEGORY_ACCENT, getNodeMeta } from '@/lib/nodeMeta';
 import { formatInt } from '@/lib/format';
 import { cn } from '@/lib/utils';
@@ -13,6 +13,10 @@ export interface HusterNodeData extends Record<string, unknown> {
   durationMs: number;
   /** 是否处于一次运行中；用于将「待执行 / 已跳过」节点整体置灰。 */
   runActive: boolean;
+  /** 是否属于本次运行范围（「运行至此」时范围外的节点保持原样，不置灰）。 */
+  inScope: boolean;
+  /** 是否被「缓存至此」冻结：加锁标记 + 淡蓝底色，且不可编辑。 */
+  frozen: boolean;
 }
 
 const STATUS_RING: Record<NodeRunStatus, string> = {
@@ -24,22 +28,33 @@ const STATUS_RING: Record<NodeRunStatus, string> = {
 };
 
 export function NodeCard({ data, selected }: NodeProps) {
-  const { node, status, rowCount, runActive } = data as unknown as HusterNodeData;
+  const { node, status, rowCount, runActive, inScope, frozen } = data as unknown as HusterNodeData;
   const meta = getNodeMeta(node.kind);
   const Icon = meta.icon;
   const showLabels = meta.inputs.length > 1;
-  /** 运行时尚未执行（或已被跳过）的节点：整体置灰，表示「未参与 / 未生效」。 */
-  const dimmed = runActive && (status === 'pending' || status === 'skipped');
+  const showOutputLabels = meta.outputs.length > 1;
+  /** 运行时尚未执行（或已被跳过）的节点：整体置灰，表示「未参与 / 未生效」。
+   *  「运行至此」时，范围外的节点不属于本次运行，保持原样。 */
+  const dimmed = runActive && inScope && (status === 'pending' || status === 'skipped');
 
   return (
     <div
       className={cn(
         'relative w-26 rounded-md border-2 bg-card shadow-md transition-all',
         STATUS_RING[status],
+        frozen && 'bg-sky-500/10',
         dimmed && 'opacity-50 grayscale',
         selected && 'ring-2 ring-ring ring-offset-1 ring-offset-background',
       )}
     >
+      {frozen && (
+        <div
+          className="absolute -right-1.5 -top-1.5 z-10 flex size-4 items-center justify-center rounded-full bg-sky-500 text-white shadow"
+          title="已缓存冻结，不可修改"
+        >
+          <Lock className="size-2.5" />
+        </div>
+      )}
       <div className={cn('h-0.5 w-full rounded-t-sm', CATEGORY_ACCENT[meta.category])} />
       <div className="flex items-center gap-1.5 px-2 py-1.5">
         <div
@@ -88,9 +103,27 @@ export function NodeCard({ data, selected }: NodeProps) {
         </div>
       ))}
 
-      {meta.hasOutput && (
-        <Handle id="out" type="source" position={Position.Right} style={{ top: '50%' }} />
-      )}
+      {meta.outputs.map((output, index) => (
+        <div key={output.id}>
+          <Handle
+            id={output.id}
+            type="source"
+            position={Position.Right}
+            style={{ top: `${((index + 1) / (meta.outputs.length + 1)) * 100}%` }}
+          />
+          {showOutputLabels && (
+            <span
+              className="pointer-events-none absolute -translate-y-1/2 text-[7px] text-muted-foreground"
+              style={{
+                right: 8,
+                top: `${((index + 1) / (meta.outputs.length + 1)) * 100}%`,
+              }}
+            >
+              {output.label}
+            </span>
+          )}
+        </div>
+      ))}
     </div>
   );
 }

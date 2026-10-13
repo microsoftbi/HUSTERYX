@@ -21,6 +21,8 @@ export interface NodeResultState {
 export interface RunContext {
   runId: string;
   workflow: Workflow;
+  /** 「运行至此」的目标节点；为空表示全量运行。 */
+  targetNodeId?: string;
   session: DuckSession;
   status: 'running' | 'success' | 'error';
   nodeStatus: Map<string, NodeRunStatus>;
@@ -29,10 +31,49 @@ export interface RunContext {
   events: SseEvent[];
   createdAt: number;
   lastAccess: number;
+  /** 是否拥有 session 的所有权；复用缓存运行时为 false，销毁时不关闭共享会话。 */
+  ownsSession: boolean;
+  /** 「缓存至此」运行：成功后钉住本次会话。 */
+  freeze?: boolean;
+  /** 「缓存至此」为本次运行分配的缓存令牌。 */
+  cacheToken?: string;
+  /** 复用缓存运行：这些节点直接沿用缓存结果，跳过执行。 */
+  skipNodeIds?: Set<string>;
+  /** 已被钉住（缓存），不随 TTL 回收。 */
+  pinned?: boolean;
+}
+
+/** 被钉住（冻结）的缓存：会话与其上游节点结果在会话存活期内长期保留。 */
+export interface PinnedCache {
+  cacheToken: string;
+  runId: string;
+  boundaryNodeId: string;
+  cachedNodeIds: Set<string>;
+  results: Map<string, NodeResultState>;
+  session: DuckSession;
+}
+
+/** 创建运行时可选参数：冻结缓存 / 复用缓存。 */
+export interface CreateRunOptions {
+  /** 「缓存至此」：本次运行成功后钉住会话。 */
+  freezeToken?: string;
+  /** 复用已有缓存：跳过缓存节点并共享其会话。 */
+  reuseToken?: string;
+}
+
+/** 复用缓存时令牌已失效（后端重启或已取消缓存）。 */
+export class CacheExpiredError extends Error {
+  code = 'CACHE_EXPIRED';
+  constructor() {
+    super('缓存已失效');
+    this.name = 'CacheExpiredError';
+  }
 }
 
 const MAX_BUFFERED_EVENTS = 5000;
 const runs = new Map<string, RunContext>();
+/** 已钉住的缓存，键为缓存令牌。 */
+const pinnedCaches = new Map<string, PinnedCache>();
 let evictor: NodeJS.Timeout | null = null;
 
 function startEvictor(): void {
@@ -40,6 +81,8 @@ function startEvictor(): void {
   evictor = setInterval(() => {
     const now = Date.now();
     for (const [runId, ctx] of runs.entries()) {
+      // 被钉住的缓存会话不回收，提供给后续运行复用。
+      if (ctx.pinned) continue;
       if (now - ctx.lastAccess > RUN_TTL_MS) {
         disposeRun(runId);
       }
@@ -48,13 +91,50 @@ function startEvictor(): void {
   evictor.unref?.();
 }
 
-export async function createRun(workflow: Workflow): Promise<RunContext> {
+export async function createRun(
+  workflow: Workflow,
+  targetNodeId?: string,
+  options?: CreateRunOptions,
+): Promise<RunContext> {
   startEvictor();
-  const session = await createSession();
   const now = Date.now();
+
+  // 复用缓存：共享被钉住会话，缓存节点直接沿用成功结果。
+  if (options?.reuseToken) {
+    const cache = pinnedCaches.get(options.reuseToken);
+    if (!cache) throw new CacheExpiredError();
+    const ctx: RunContext = {
+      runId: nanoid(12),
+      workflow,
+      session: cache.session,
+      status: 'running',
+      nodeStatus: new Map(),
+      nodeResults: new Map(),
+      subscribers: new Set(),
+      events: [],
+      createdAt: now,
+      lastAccess: now,
+      ownsSession: false,
+      skipNodeIds: new Set(cache.cachedNodeIds),
+    };
+    for (const node of workflow.nodes) {
+      const cached = cache.results.get(node.id);
+      if (cached && cache.cachedNodeIds.has(node.id)) {
+        ctx.nodeStatus.set(node.id, 'success');
+        ctx.nodeResults.set(node.id, { ...cached });
+      } else {
+        ctx.nodeStatus.set(node.id, 'pending');
+      }
+    }
+    runs.set(ctx.runId, ctx);
+    return ctx;
+  }
+
+  const session = await createSession();
   const ctx: RunContext = {
     runId: nanoid(12),
     workflow,
+    targetNodeId,
     session,
     status: 'running',
     nodeStatus: new Map(),
@@ -63,12 +143,55 @@ export async function createRun(workflow: Workflow): Promise<RunContext> {
     events: [],
     createdAt: now,
     lastAccess: now,
+    ownsSession: true,
+    ...(options?.freezeToken ? { freeze: true, cacheToken: options.freezeToken } : {}),
   };
   for (const node of workflow.nodes) {
     ctx.nodeStatus.set(node.id, 'pending');
   }
   runs.set(ctx.runId, ctx);
   return ctx;
+}
+
+/** 「缓存至此」成功后钉住本次运行的会话，返回缓存条目。 */
+export function pinRun(
+  runId: string,
+  cachedNodeIds: Set<string>,
+  boundaryNodeId: string,
+): PinnedCache | null {
+  const ctx = runs.get(runId);
+  if (!ctx || !ctx.cacheToken) return null;
+  ctx.pinned = true;
+  const results = new Map<string, NodeResultState>();
+  for (const id of cachedNodeIds) {
+    const result = ctx.nodeResults.get(id);
+    if (result) results.set(id, { ...result });
+  }
+  const cache: PinnedCache = {
+    cacheToken: ctx.cacheToken,
+    runId,
+    boundaryNodeId,
+    cachedNodeIds: new Set(cachedNodeIds),
+    results,
+    session: ctx.session,
+  };
+  pinnedCaches.set(ctx.cacheToken, cache);
+  return cache;
+}
+
+export function getPinnedCache(cacheToken: string): PinnedCache | null {
+  return pinnedCaches.get(cacheToken) ?? null;
+}
+
+/** 取消缓存：关闭被钉住的会话并清理所有共享该会话的运行。 */
+export function unpinCache(cacheToken: string): boolean {
+  const cache = pinnedCaches.get(cacheToken);
+  if (!cache) return false;
+  pinnedCaches.delete(cacheToken);
+  for (const [runId, ctx] of runs.entries()) {
+    if (ctx.session === cache.session) disposeRun(runId);
+  }
+  return true;
 }
 
 export function getRun(runId: string): RunContext | null {
@@ -87,7 +210,8 @@ export function disposeRun(runId: string): void {
       /* ignore */
     }
   }
-  closeSession(ctx.session);
+  // 复用缓存运行不拥有会话，避免误关被钉住的共享会话。
+  if (ctx.ownsSession) closeSession(ctx.session);
   runs.delete(runId);
 }
 

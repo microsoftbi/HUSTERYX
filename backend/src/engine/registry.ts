@@ -11,6 +11,7 @@ import { sort } from '../nodes/sort.js';
 import { outputCsv } from '../nodes/outputCsv.js';
 import { outputExcel } from '../nodes/outputExcel.js';
 import { outputSqlServer } from '../nodes/outputSqlServer.js';
+import { browser } from '../nodes/browser.js';
 
 /** NodeKind → 执行器 的注册表。 */
 export const nodeRegistry: Record<NodeKind, NodeExecutor> = {
@@ -25,4 +26,5 @@ export const nodeRegistry: Record<NodeKind, NodeExecutor> = {
   outputCsv,
   outputExcel,
   outputSqlServer,
+  browser,
 };

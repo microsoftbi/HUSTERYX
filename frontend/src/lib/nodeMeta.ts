@@ -3,6 +3,7 @@ import {
   Calculator,
   Columns3,
   Database,
+  Eye,
   FileDown,
   FileSpreadsheet,
   FileType2,
@@ -29,8 +30,8 @@ export interface NodeMeta {
   icon: LucideIcon;
   /** 目标端口（输入），id 会写入 edge.targetHandle */
   inputs: NodeHandle[];
-  /** 是否拥有源端口（输出） */
-  hasOutput: boolean;
+  /** 源端口（输出），id 会写入 edge.sourceHandle；空数组表示无输出 */
+  outputs: NodeHandle[];
   defaultConfig: Record<string, unknown>;
 }
 
@@ -52,7 +53,7 @@ export const NODE_META: Record<NodeKind, NodeMeta> = {
     description: '从本地 CSV 文件读取数据',
     icon: FileSpreadsheet,
     inputs: [],
-    hasOutput: true,
+    outputs: [{ id: 'out', label: '输出' }],
     defaultConfig: { path: '', delimiter: ',', hasHeader: true, encoding: 'utf-8' },
   },
   inputExcel: {
@@ -62,7 +63,7 @@ export const NODE_META: Record<NodeKind, NodeMeta> = {
     description: '从 Excel 工作表读取数据',
     icon: Table2,
     inputs: [],
-    hasOutput: true,
+    outputs: [{ id: 'out', label: '输出' }],
     defaultConfig: { path: '', sheet: '', hasHeader: true },
   },
   inputSqlServer: {
@@ -72,7 +73,7 @@ export const NODE_META: Record<NodeKind, NodeMeta> = {
     description: '执行 SQL 查询读取 SQL Server 数据',
     icon: Database,
     inputs: [],
-    hasOutput: true,
+    outputs: [{ id: 'out', label: '输出' }],
     defaultConfig: { connection: { ...DEFAULT_SQL_CONNECTION }, query: '' },
   },
   select: {
@@ -82,17 +83,20 @@ export const NODE_META: Record<NodeKind, NodeMeta> = {
     description: '选择、重命名并重排列',
     icon: Columns3,
     inputs: [{ id: 'in', label: '输入' }],
-    hasOutput: true,
+    outputs: [{ id: 'out', label: '输出' }],
     defaultConfig: { fields: [] },
   },
   filter: {
     kind: 'filter',
     label: 'Filter',
     category: 'transform',
-    description: '按 SQL 布尔表达式过滤行',
+    description: '按 SQL 布尔表达式过滤行；T 输出命中行，F 输出其余行',
     icon: Filter,
     inputs: [{ id: 'in', label: '输入' }],
-    hasOutput: true,
+    outputs: [
+      { id: 'out', label: 'T' },
+      { id: 'f', label: 'F' },
+    ],
     defaultConfig: { expression: '' },
   },
   join: {
@@ -105,7 +109,7 @@ export const NODE_META: Record<NodeKind, NodeMeta> = {
       { id: 'left', label: '左' },
       { id: 'right', label: '右' },
     ],
-    hasOutput: true,
+    outputs: [{ id: 'out', label: '输出' }],
     defaultConfig: { joinType: 'inner', leftKey: '', rightKey: '', selectFields: [] },
   },
   aggregation: {
@@ -115,7 +119,7 @@ export const NODE_META: Record<NodeKind, NodeMeta> = {
     description: '分组并聚合（Sum/Count/Max/Min/Avg）',
     icon: Calculator,
     inputs: [{ id: 'in', label: '输入' }],
-    hasOutput: true,
+    outputs: [{ id: 'out', label: '输出' }],
     defaultConfig: { groupBy: [], aggregations: [] },
   },
   sort: {
@@ -125,7 +129,7 @@ export const NODE_META: Record<NodeKind, NodeMeta> = {
     description: '按多列排序',
     icon: ArrowDownUp,
     inputs: [{ id: 'in', label: '输入' }],
-    hasOutput: true,
+    outputs: [{ id: 'out', label: '输出' }],
     defaultConfig: { sorts: [] },
   },
   outputCsv: {
@@ -135,7 +139,7 @@ export const NODE_META: Record<NodeKind, NodeMeta> = {
     description: '写出 CSV 文件',
     icon: FileDown,
     inputs: [{ id: 'in', label: '输入' }],
-    hasOutput: false,
+    outputs: [],
     defaultConfig: { path: 'output.csv', delimiter: ',', hasHeader: true },
   },
   outputExcel: {
@@ -145,7 +149,7 @@ export const NODE_META: Record<NodeKind, NodeMeta> = {
     description: '写出 Excel 工作表',
     icon: Sheet,
     inputs: [{ id: 'in', label: '输入' }],
-    hasOutput: false,
+    outputs: [],
     defaultConfig: { path: 'output.xlsx', sheet: 'Sheet1' },
   },
   outputSqlServer: {
@@ -155,13 +159,23 @@ export const NODE_META: Record<NodeKind, NodeMeta> = {
     description: '写入 SQL Server 表',
     icon: FileType2,
     inputs: [{ id: 'in', label: '输入' }],
-    hasOutput: false,
+    outputs: [],
     defaultConfig: {
       connection: { ...DEFAULT_SQL_CONNECTION },
       table: '',
       mode: 'append',
       createTable: true,
     },
+  },
+  browser: {
+    kind: 'browser',
+    label: 'Browser',
+    category: 'output',
+    description: '查看上游数据；运行后点击节点可查看全部缓存数据',
+    icon: Eye,
+    inputs: [{ id: 'in', label: '输入' }],
+    outputs: [],
+    defaultConfig: {},
   },
 };
 

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Loader2, RefreshCw } from 'lucide-react';
+import { Loader2, Download, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -16,7 +16,14 @@ import { api } from '@/api/client';
 import { Field, useNodeConfig, type PanelProps } from '@/components/panels/fields';
 import { FilePathField } from '@/components/panels/FilePicker';
 import { SqlConnectionForm } from '@/components/panels/SqlConnectionForm';
-import type { FileUploadResult, InputCsvConfig, InputExcelConfig, InputSqlServerConfig } from '@/types';
+import type {
+  FileUploadResult,
+  InputCsvConfig,
+  InputExcelConfig,
+  InputSqlServerConfig,
+  SqlObjectRef,
+  SqlServerConnection,
+} from '@/types';
 
 /* ----------------------------- CSV 输入 ----------------------------- */
 
@@ -182,13 +189,120 @@ export function InputExcelPanel({ node }: PanelProps) {
 
 export function InputSqlServerPanel({ node }: PanelProps) {
   const [config, patch] = useNodeConfig<InputSqlServerConfig>(node);
+  const [objects, setObjects] = useState<SqlObjectRef[]>([]);
+  const [loadingObjects, setLoadingObjects] = useState(false);
+  const [objectError, setObjectError] = useState<string | null>(null);
+  const connection = config.connection;
+
+  const loadObjects = useCallback(async (conn: SqlServerConnection) => {
+    if (!conn?.server || !conn?.database) {
+      setObjects([]);
+      setObjectError(null);
+      return;
+    }
+    setLoadingObjects(true);
+    setObjectError(null);
+    try {
+      const res = await api.listSqlObjects(conn);
+      setObjects(res.objects);
+    } catch (err) {
+      setObjects([]);
+      setObjectError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoadingObjects(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadObjects(connection);
+    // 连接关键字段变化时重新拉取表/视图列表
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connection.server, connection.port, connection.database, connection.user, loadObjects]);
+
+  const objectValue = config.object ? `${config.object.schema}.${config.object.name}` : '';
+  const hasObjectFallback =
+    Boolean(objectValue) && !objects.some((obj) => `${obj.schema}.${obj.name}` === objectValue);
+
+  const handleSelectObject = (value: string) => {
+    const picked = objects.find((obj) => `${obj.schema}.${obj.name}` === value);
+    if (picked) patch({ object: picked });
+  };
+
+  const handleLoad = () => {
+    const obj = config.object;
+    if (!obj) return;
+    patch({ query: `SELECT * FROM [${obj.schema}].[${obj.name}]` });
+  };
+
   return (
     <div className="flex flex-col gap-4">
       <SqlConnectionForm
-        connection={config.connection}
-        onChange={(connection) => patch({ connection })}
+        connection={connection}
+        onChange={(next) => patch({ connection: next })}
       />
-      <Field label="SQL 查询" hint="写入标准 T-SQL 查询，结果将作为本节点的输出表。">
+
+      <Field label="表 / 视图" hint="选择数据库下的一张表或视图，点击「加载」生成查询。">
+        <div className="flex items-center gap-1.5">
+          {objects.length > 0 ? (
+            <Select value={objectValue} onValueChange={handleSelectObject}>
+              <SelectTrigger className="h-8 text-xs">
+                <SelectValue placeholder="选择表 / 视图" />
+              </SelectTrigger>
+              <SelectContent>
+                {hasObjectFallback && <SelectItem value={objectValue}>{objectValue}</SelectItem>}
+                {objects.map((obj) => {
+                  const value = `${obj.schema}.${obj.name}`;
+                  return (
+                    <SelectItem key={value} value={value}>
+                      {value}
+                      {obj.type === 'view' ? ' · 视图' : ''}
+                    </SelectItem>
+                  );
+                })}
+              </SelectContent>
+            </Select>
+          ) : (
+            <Input
+              value={objectValue}
+              readOnly
+              placeholder="请先连接并选择数据库"
+              className="h-8 text-xs"
+            />
+          )}
+          <Button
+            type="button"
+            variant="outline"
+            size="icon-sm"
+            title="刷新表 / 视图列表"
+            disabled={loadingObjects || !connection.server || !connection.database}
+            onClick={() => void loadObjects(connection)}
+          >
+            {loadingObjects ? <Loader2 className="animate-spin" /> : <RefreshCw />}
+          </Button>
+        </div>
+      </Field>
+
+      {objectError && (
+        <p className="text-[11px] text-destructive" title={objectError}>
+          {objectError}
+        </p>
+      )}
+
+      <div className="flex items-center gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={!config.object}
+          onClick={handleLoad}
+        >
+          <Download />
+          加载
+        </Button>
+        <span className="text-[11px] text-muted-foreground">生成默认查询，可在下方手动改写。</span>
+      </div>
+
+      <Field label="SQL 查询" hint="选表后自动生成，可手动改写（高级）。">
         <Textarea
           value={config.query ?? ''}
           onChange={(event) => patch({ query: event.target.value })}
