@@ -23,6 +23,9 @@ export function setApiBase(base: string): void {
   apiBase = base.replace(/\/$/, '');
 }
 
+/** 当前连接模式：browser=纯浏览器 dev；local=内置引擎；remote=远程服务器。 */
+let apiMode: 'browser' | 'local' | 'remote' = 'browser';
+
 /** 启动时解析后端基地址：Tauri 环境读取 Rust 提供的 server config。 */
 export async function initApiBase(): Promise<void> {
   const { isTauri, getServerConfig } = await import('@/lib/desktop');
@@ -30,8 +33,32 @@ export async function initApiBase(): Promise<void> {
   try {
     const config = await getServerConfig();
     setApiBase(config.baseUrl);
+    apiMode = config.mode;
   } catch {
     /* 保持回退地址 */
+  }
+}
+
+/**
+ * 内置 sidecar 场景下，后端进程（Node+Fastify+DuckDB 冷启动约 1s）晚于 webview 首屏就绪，
+ * 若首屏请求过早发起会连接被拒且不会自动恢复。这里在渲染前轮询 /api/health，就绪后再渲染；
+ * 超时则照常渲染，由界面呈现离线状态。远程/纯浏览器模式不阻塞。
+ */
+export async function waitForBackendReady(
+  timeoutMs = 20000,
+  intervalMs = 250,
+): Promise<boolean> {
+  if (apiMode !== 'local') return true;
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    try {
+      const res = await api.health();
+      if (res.ok) return true;
+    } catch {
+      /* 后端尚未监听，稍后重试 */
+    }
+    if (Date.now() >= deadline) return false;
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
   }
 }
 
