@@ -112,3 +112,12 @@ export function deleteWorkflow(id: string): boolean {
   const info = db.prepare('DELETE FROM workflows WHERE id = ?').run(id);
   return info.changes > 0;
 }
+
+/** 关闭底层 SQLite 连接，供进程退出时调用。 */
+export function closeDb(): void {
+  try {
+    db.close();
+  } catch {
+    /* 已关闭时忽略 */
+  }
+}
