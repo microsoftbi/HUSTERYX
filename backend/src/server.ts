@@ -6,7 +6,6 @@ import { filesRoutes } from './routes/files.js';
 import { runsRoutes } from './routes/runs.js';
 import { schemaRoutes } from './routes/schema.js';
 import { settingsRoutes } from './routes/settings.js';
-import { workflowsRoutes } from './routes/workflows.js';
 
 export async function buildServer(): Promise<FastifyInstance> {
   const app = Fastify({
@@ -32,7 +31,6 @@ export async function buildServer(): Promise<FastifyInstance> {
     ts: Date.now(),
   }));
 
-  await app.register(workflowsRoutes);
   await app.register(runsRoutes);
   await app.register(filesRoutes);
   await app.register(connectionsRoutes);

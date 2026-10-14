@@ -3,6 +3,7 @@ import { api, ApiRequestError } from '@/api/client';
 import { subscribeRun } from '@/api/sse';
 import { NODE_META, getNodeMeta } from '@/lib/nodeMeta';
 import { ancestorNodeIds } from '@/lib/graph';
+import { openWorkflowFile, saveWorkflowFile } from '@/lib/desktop';
 import type {
   AppSettings,
   ColumnMeta,
@@ -14,7 +15,6 @@ import type {
   Workflow,
   WorkflowEdge,
   WorkflowNode,
-  WorkflowSummary,
 } from '@/types';
 
 const MAX_LOGS = 2000;
@@ -35,13 +35,14 @@ interface WorkflowState {
   /* 工作流本身 */
   workflowId: string | null;
   workflowName: string;
+  /** 当前工作流对应的磁盘文件路径；为空表示尚未保存到文件。 */
+  workflowFilePath: string | null;
+  /** 首次创建时间，随文件一起持久化。 */
+  workflowCreatedAt: number | null;
   nodes: WorkflowNode[];
   edges: WorkflowEdge[];
   selectedNodeId: string | null;
   dirty: boolean;
-
-  /* 工作流列表 */
-  workflowList: WorkflowSummary[];
 
   /* 运行状态 */
   runId: string | null;
@@ -89,10 +90,10 @@ interface WorkflowState {
   /* 工作流操作 */
   newWorkflow: () => void;
   setWorkflowName: (name: string) => void;
-  loadWorkflow: (id: string) => Promise<void>;
-  refreshWorkflowList: () => Promise<void>;
+  /** 从 `.htyx` 文件打开工作流（弹出系统「打开」对话框）。 */
+  openWorkflow: () => Promise<void>;
+  /** 保存工作流到 `.htyx` 文件；返回落盘后的工作流，用户取消时返回 null。 */
   saveWorkflow: () => Promise<Workflow | null>;
-  deleteWorkflow: (id: string) => Promise<void>;
 
   /* 运行与预览 */
   run: (targetNodeId?: string, opts?: { freeze?: boolean }) => Promise<void>;
@@ -205,12 +206,12 @@ function buildProbePlan(node: WorkflowNode): ProbePlan | null {
 export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
   workflowId: null,
   workflowName: '未命名工作流',
+  workflowFilePath: null,
+  workflowCreatedAt: null,
   nodes: [],
   edges: [],
   selectedNodeId: null,
   dirty: false,
-
-  workflowList: [],
 
   runId: null,
   runStatus: 'idle',
@@ -378,6 +379,8 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
     set({
       workflowId: null,
       workflowName: '未命名工作流',
+      workflowFilePath: null,
+      workflowCreatedAt: null,
       nodes: [],
       edges: [],
       selectedNodeId: null,
@@ -400,17 +403,29 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
 
   setWorkflowName: (name) => set({ workflowName: name, dirty: true }),
 
-  loadWorkflow: async (id) => {
-    const workflow = await api.getWorkflow(id);
+  openWorkflow: async () => {
+    const opened = await openWorkflowFile();
+    if (!opened) return;
+    let parsed: Workflow;
+    try {
+      parsed = JSON.parse(opened.contents) as Workflow;
+    } catch {
+      throw new Error('工作流文件不是合法的 JSON');
+    }
+    if (!parsed || !Array.isArray(parsed.nodes) || !Array.isArray(parsed.edges)) {
+      throw new Error('工作流文件格式无效');
+    }
     unsubscribe?.();
     unsubscribe = null;
     const token = get().cacheToken;
     if (token) void api.deleteCache(token).catch(() => {});
     set({
-      workflowId: workflow.id,
-      workflowName: workflow.name,
-      nodes: workflow.nodes,
-      edges: workflow.edges.map((edge) => ({
+      workflowId: parsed.id ?? crypto.randomUUID(),
+      workflowName: parsed.name || '未命名工作流',
+      workflowFilePath: opened.path,
+      workflowCreatedAt: parsed.createdAt ?? Date.now(),
+      nodes: parsed.nodes,
+      edges: parsed.edges.map((edge) => ({
         ...edge,
         targetHandle: edge.targetHandle || 'in',
         sourceHandle: edge.sourceHandle || 'out',
@@ -433,34 +448,24 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
     });
   },
 
-  refreshWorkflowList: async () => {
-    const list = await api.listWorkflows();
-    set({
-      workflowList: list.map((workflow) => ({
-        id: workflow.id,
-        name: workflow.name,
-        createdAt: workflow.createdAt,
-        updatedAt: workflow.updatedAt,
-        nodeCount: workflow.nodeCount ?? 0,
-      })),
-    });
-  },
-
   saveWorkflow: async () => {
-    const { workflowId, workflowName, nodes, edges } = get();
-    const payload = { name: workflowName || '未命名工作流', nodes, edges };
-    const saved = workflowId
-      ? await api.updateWorkflow(workflowId, payload)
-      : await api.createWorkflow(payload);
-    set({ workflowId: saved.id, workflowName: saved.name, dirty: false });
-    await get().refreshWorkflowList();
-    return saved;
-  },
-
-  deleteWorkflow: async (id) => {
-    await api.deleteWorkflow(id);
-    if (get().workflowId === id) get().newWorkflow();
-    await get().refreshWorkflowList();
+    const { workflowId, workflowFilePath, workflowName, workflowCreatedAt, nodes, edges } = get();
+    const workflow: Workflow = {
+      id: workflowId ?? crypto.randomUUID(),
+      name: workflowName || '未命名工作流',
+      nodes,
+      edges,
+      createdAt: workflowCreatedAt ?? Date.now(),
+      updatedAt: Date.now(),
+    };
+    const savedPath = await saveWorkflowFile(
+      `${workflow.name}.htyx`,
+      JSON.stringify(workflow, null, 2),
+      workflowFilePath,
+    );
+    if (savedPath === null) return null; // 用户取消了「另存为」对话框
+    set({ workflowId: workflow.id, workflowFilePath: savedPath, dirty: false });
+    return workflow;
   },
 
   run: async (targetNodeId, opts) => {

@@ -1,15 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ChevronDown, FilePlus2, Loader2, Play, Save, Trash2 } from 'lucide-react';
+import { FilePlus2, FolderOpen, Loader2, Play, Save } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { api } from '@/api/client';
@@ -27,16 +19,12 @@ export function Toolbar() {
   const run = useWorkflowStore((s) => s.run);
   const saveWorkflow = useWorkflowStore((s) => s.saveWorkflow);
   const newWorkflow = useWorkflowStore((s) => s.newWorkflow);
-  const workflowList = useWorkflowStore((s) => s.workflowList);
-  const refreshWorkflowList = useWorkflowStore((s) => s.refreshWorkflowList);
-  const loadWorkflow = useWorkflowStore((s) => s.loadWorkflow);
-  const deleteWorkflow = useWorkflowStore((s) => s.deleteWorkflow);
+  const openWorkflow = useWorkflowStore((s) => s.openWorkflow);
 
   const [saving, setSaving] = useState(false);
   const [backend, setBackend] = useState<BackendState>('checking');
 
   useEffect(() => {
-    void refreshWorkflowList().catch(() => undefined);
     let cancelled = false;
     api
       .health()
@@ -45,7 +33,7 @@ export function Toolbar() {
     return () => {
       cancelled = true;
     };
-  }, [refreshWorkflowList]);
+  }, []);
 
   const handleSave = useCallback(async () => {
     setSaving(true);
@@ -57,6 +45,14 @@ export function Toolbar() {
       setSaving(false);
     }
   }, [saveWorkflow]);
+
+  const handleOpen = useCallback(async () => {
+    try {
+      await openWorkflow();
+    } catch (error) {
+      console.error('打开工作流失败', error);
+    }
+  }, [openWorkflow]);
 
   const running = runStatus === 'running';
 
@@ -89,44 +85,10 @@ export function Toolbar() {
           新建
         </Button>
 
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="sm">
-              打开
-              <ChevronDown className="size-3.5" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-64">
-            <DropdownMenuLabel>已保存的工作流</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            {workflowList.length === 0 && (
-              <div className="px-2 py-3 text-xs text-muted-foreground">暂无已保存的工作流</div>
-            )}
-            {workflowList.map((item) => (
-              <DropdownMenuItem
-                key={item.id}
-                onSelect={(event) => {
-                  event.preventDefault();
-                  void loadWorkflow(item.id).catch(() => undefined);
-                }}
-                className="group justify-between"
-              >
-                <span className="truncate">{item.name}</span>
-                <button
-                  type="button"
-                  className="ml-2 shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    void deleteWorkflow(item.id).catch(() => undefined);
-                  }}
-                  aria-label="删除工作流"
-                >
-                  <Trash2 className="size-3.5" />
-                </button>
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <Button variant="ghost" size="sm" onClick={handleOpen}>
+          <FolderOpen />
+          打开
+        </Button>
 
         <Button
           variant="outline"

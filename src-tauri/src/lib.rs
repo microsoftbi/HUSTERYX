@@ -6,10 +6,12 @@
 mod sidecar;
 
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 use std::process::Child;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use tauri::{Emitter, Manager, RunEvent, WindowEvent};
+use tauri_plugin_dialog::DialogExt;
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -140,9 +142,75 @@ fn restart_sidecar(
     Ok(state.config.lock().unwrap().clone())
 }
 
+/// 打开工作流文件后返回给前端的载荷。
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenedWorkflow {
+    pub path: String,
+    pub contents: String,
+}
+
+/// 保存工作流到用户指定位置。
+///
+/// `path` 为空时弹出系统「另存为」对话框；已有路径时直接覆盖写入（对应「保存」）。
+/// 用户取消对话框时返回 `None`。
+#[tauri::command]
+async fn save_workflow_file(
+    app: tauri::AppHandle,
+    default_name: String,
+    contents: String,
+    path: Option<String>,
+) -> Result<Option<String>, String> {
+    let target: PathBuf = match path {
+        Some(existing) => PathBuf::from(existing),
+        None => {
+            let (tx, mut rx) = tauri::async_runtime::channel(1);
+            app.dialog()
+                .file()
+                .set_title("保存工作流")
+                .set_file_name(&default_name)
+                .add_filter("HUSTERYX 工作流", &["htyx"])
+                .save_file(move |picked| {
+                    let _ = tx.blocking_send(picked);
+                });
+            match rx.recv().await.flatten() {
+                Some(file_path) => file_path.into_path().map_err(|e| e.to_string())?,
+                None => return Ok(None),
+            }
+        }
+    };
+    std::fs::write(&target, contents).map_err(|e| e.to_string())?;
+    Ok(Some(target.to_string_lossy().into_owned()))
+}
+
+/// 弹出系统「打开」对话框并读取所选工作流文件；用户取消时返回 `None`。
+#[tauri::command]
+async fn open_workflow_file(app: tauri::AppHandle) -> Result<Option<OpenedWorkflow>, String> {
+    let (tx, mut rx) = tauri::async_runtime::channel(1);
+    app.dialog()
+        .file()
+        .set_title("打开工作流")
+        .add_filter("HUSTERYX 工作流", &["htyx"])
+        .pick_file(move |picked| {
+            let _ = tx.blocking_send(picked);
+        });
+    match rx.recv().await.flatten() {
+        Some(file_path) => {
+            let path = file_path.into_path().map_err(|e| e.to_string())?;
+            let contents = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+            Ok(Some(OpenedWorkflow {
+                path: path.to_string_lossy().into_owned(),
+                contents,
+            }))
+        }
+        None => Ok(None),
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             app.manage(AppState {
                 config: Mutex::new(ServerConfig {
@@ -172,7 +240,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_server_config,
             set_server_config,
-            restart_sidecar
+            restart_sidecar,
+            save_workflow_file,
+            open_workflow_file
         ])
         .build(tauri::generate_context!())
         .expect("error while building HUSTERYX tauri application")

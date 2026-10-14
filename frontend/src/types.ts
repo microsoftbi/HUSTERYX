@@ -48,14 +48,6 @@ export interface Workflow {
   updatedAt: number;
 }
 
-export interface WorkflowSummary {
-  id: string;
-  name: string;
-  createdAt: number;
-  updatedAt: number;
-  nodeCount?: number;
-}
-
 /* ----------------------------- 节点配置 Schema ----------------------------- */
 
 export interface SqlServerConnection {

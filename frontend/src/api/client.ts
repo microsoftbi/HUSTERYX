@@ -8,7 +8,6 @@ import type {
   SqlServerConnection,
   SqlServerTestResult,
   Workflow,
-  WorkflowSummary,
 } from '@/types';
 
 /** 后端基地址：纯浏览器 dev 回退到 VITE_API_BASE / :8787，Tauri 环境由 initApiBase 设定。 */
@@ -90,16 +89,6 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   health: () => request<{ ok: boolean; name: string; ts: number }>('/api/health'),
-
-  /* ----------------------------- 工作流 ----------------------------- */
-  listWorkflows: () => request<WorkflowSummary[]>('/api/workflows'),
-  getWorkflow: (id: string) => request<Workflow>(`/api/workflows/${id}`),
-  createWorkflow: (body: Pick<Workflow, 'name' | 'nodes' | 'edges'>) =>
-    request<Workflow>('/api/workflows', { method: 'POST', body: JSON.stringify(body) }),
-  updateWorkflow: (id: string, body: Pick<Workflow, 'name' | 'nodes' | 'edges'>) =>
-    request<Workflow>(`/api/workflows/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
-  deleteWorkflow: (id: string) =>
-    request<{ ok: boolean }>(`/api/workflows/${id}`, { method: 'DELETE' }),
 
   /* ----------------------------- 运行 ----------------------------- */
   runWorkflow: (
